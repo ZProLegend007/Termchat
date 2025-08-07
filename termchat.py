@@ -34,6 +34,36 @@ TERMCHAT_ASCII = """
 """
 
 
+class SplashScreen(App):
+    """ASCII Art splash screen shown for 2 seconds"""
+    
+    CSS = """
+    Screen {
+        align: center middle;
+        background: black;
+        color: #00ff00;
+    }
+    
+    #splash {
+        width: auto;
+        height: auto;
+        content-align: center middle;
+        text-style: bold;
+        color: #00ff00;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Static(TERMCHAT_ASCII, id="splash")
+
+    def on_mount(self):
+        # Auto-exit after 2 seconds
+        self.set_timer(2.0, self.action_quit)
+
+    def action_quit(self):
+        self.exit()
+
+
 class ConnectionDialog(App):
     """Modal dialog for connection details"""
     
@@ -44,9 +74,9 @@ class ConnectionDialog(App):
     }
     
     #dialog {
-        width: 60;
-        height: 20;
-        border: thick #00ff00 80%;
+        width: 50;
+        height: 18;
+        border: solid #00ff00;
         background: black;
         color: white;
     }
@@ -57,15 +87,15 @@ class ConnectionDialog(App):
         content-align: center middle;
         text-style: bold;
         color: #00ff00;
-        background: #001100;
-        padding: 1;
+        background: black;
+        padding: 1 0;
     }
     
     #form {
         layout: vertical;
         height: auto;
-        margin: 2 1;
-        padding: 1;
+        margin: 1;
+        padding: 0;
     }
     
     .form-row {
@@ -75,9 +105,9 @@ class ConnectionDialog(App):
     }
     
     .label {
-        width: 16;
+        width: 12;
         content-align: right middle;
-        margin-right: 2;
+        margin-right: 1;
         color: #cccccc;
         text-style: bold;
     }
@@ -99,12 +129,8 @@ class ConnectionDialog(App):
         layout: horizontal;
         height: 3;
         align: center middle;
-        background: #001100;
-        padding: 1;
-    }
-    
-    .button {
-        margin: 0 1;
+        background: black;
+        padding: 1 0;
     }
     """
     
@@ -137,7 +163,7 @@ class ConnectionDialog(App):
                     yield Label("Password:", classes="label")
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
             with Container(id="buttons"):
-                yield Static("[bold #00ff00]Tab[/bold #00ff00]: Navigate • [bold #00ff00]Enter[/bold #00ff00]: Connect • [bold #00ff00]Ctrl+C[/bold #00ff00]: Quit", classes="button")
+                yield Static("[bold #00ff00]Tab[/bold #00ff00]: Navigate • [bold #00ff00]Enter[/bold #00ff00]: Connect • [bold #00ff00]Ctrl+C[/bold #00ff00]: Quit")
 
     def on_mount(self):
         self.query_one("#username_input").focus()
@@ -192,18 +218,18 @@ class TermchatApp(App):
     #header {
         dock: top;
         height: 3;
-        background: #001100;
+        background: black;
         color: #00ff00;
         content-align: center middle;
         text-style: bold;
         border-bottom: solid #00ff00;
-        padding: 1;
+        padding: 1 0;
     }
     
     #messages_container {
         height: 1fr;
-        border: thick #00ff00;
-        margin: 1 2;
+        border: solid #00ff00;
+        margin: 1;
         background: black;
     }
     
@@ -219,17 +245,17 @@ class TermchatApp(App):
     #input_container {
         dock: bottom;
         height: 4;
-        border: thick #00ff00;
-        margin: 1 2 2 2;
-        background: #001100;
+        border: solid #00ff00;
+        margin: 0 1 1 1;
+        background: black;
     }
     
     #input_prompt {
         dock: left;
-        width: 18;
+        width: 16;
         content-align: right middle;
         color: #00ff00;
-        background: #001100;
+        background: black;
         text-style: bold;
         padding-right: 1;
     }
@@ -244,18 +270,18 @@ class TermchatApp(App):
     
     #message_input:focus {
         background: #001100;
-        border: solid #00ff00;
+        border: solid #333333;
     }
     
     #footer {
         dock: bottom;
         height: 2;
-        background: #001100;
-        color: #cccccc;
+        background: black;
+        color: #666666;
         content-align: center middle;
         text-style: italic;
         border-top: solid #333333;
-        padding: 1;
+        padding: 0;
     }
     """
     
@@ -463,6 +489,12 @@ class TermchatApp(App):
         self.exit()
 
 
+async def show_splash_screen():
+    """Show ASCII splash screen for 2 seconds"""
+    splash_app = SplashScreen()
+    await splash_app.run_async()
+
+
 async def get_connection_details() -> Optional[dict]:
     """Get connection details via a simple dialog"""
     connection_app = ConnectionDialog()
@@ -471,7 +503,10 @@ async def get_connection_details() -> Optional[dict]:
 
 async def main():
     """Entry point for the application"""
-    # First get connection details
+    # First show splash screen
+    await show_splash_screen()
+    
+    # Then get connection details
     connection_result = await get_connection_details()
     
     if connection_result is None:
