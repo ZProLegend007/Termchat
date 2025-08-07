@@ -116,19 +116,9 @@ class TermchatClient:
             self.terminal_height = 24
             self.terminal_width = 80
     
-    def position_input_at_bottom(self):
-        """Position cursor at the bottom of the terminal for input"""
-        # Move cursor to last line and clear it
-        print(f"\033[{self.terminal_height};1H\033[K", end="")
-    
     def display_message_in_chat_area(self, message):
         """Display a message in the chat area (above the input line)"""
-        # Clear the input line first
-        print(f"\033[{self.terminal_height};1H\033[K", end="")
-        # Move to second-to-last line and insert new message
-        print(f"\033[{self.terminal_height-1};1H\033[L{message}", end="")
-        # Move cursor back to the bottom (input line) and clear it
-        print(f"\033[{self.terminal_height};1H\033[K", end="", flush=True)
+        print(message)
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
@@ -189,6 +179,7 @@ class TermchatClient:
                 ping_timeout=10
             )
             end_progress()
+            clear_terminal()
             print(f"{Colors.BRIGHT_GREEN}Connected to Termchat server!{Colors.RESET}")
             return True
         except Exception as e:
@@ -271,9 +262,6 @@ class TermchatClient:
         try:
             while self.running:
                 try:
-                    # Position cursor at bottom for input
-                    self.position_input_at_bottom()
-                    
                     # Use asyncio to get user input without blocking
                     user_message = await asyncio.get_event_loop().run_in_executor(
                         None, input, f"{Colors.CYAN}Enter message: {Colors.RESET}"
