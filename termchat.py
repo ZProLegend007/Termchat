@@ -73,8 +73,8 @@ class ConnectionScreen(Screen):
     }
     
     #dialog {
-        width: 60;
-        height: 20;
+        width: 80;
+        height: 25;
         border: solid #00ff00;
         background: black;
         color: white;
@@ -93,27 +93,27 @@ class ConnectionScreen(Screen):
     #form {
         layout: vertical;
         height: auto;
-        margin: 1;
-        padding: 1;
+        margin: 2;
+        padding: 2;
     }
     
     .form-row {
-        height: 4;
+        height: 3;
         layout: horizontal;
         margin-bottom: 1;
-        margin-top: 1;
     }
     
     .label {
-        width: 12;
+        width: 15;
         content-align: right middle;
-        margin-right: 1;
+        margin-right: 2;
         color: #cccccc;
         text-style: bold;
     }
     
     .input {
-        width: 1fr;
+        width: 25;
+        height: 1;
         background: #111111;
         color: white;
         border: solid #333333;
@@ -127,7 +127,7 @@ class ConnectionScreen(Screen):
     #buttons {
         dock: bottom;
         layout: horizontal;
-        height: 3;
+        height: 4;
         align: center middle;
         background: black;
         padding: 1 0;
@@ -162,30 +162,32 @@ class ConnectionScreen(Screen):
         self.query_one("#username_input").focus()
     
     async def on_input_submitted(self, event: Input.Submitted):
-        """Handle Enter key in any input field"""
-        self.action_connect()
+        """Handle Enter key in any input field - navigate to next or connect"""
+        if event.input.id == "username_input":
+            self.query_one("#chatname_input").focus()
+        elif event.input.id == "chatname_input":
+            self.query_one("#password_input").focus()
+        elif event.input.id == "password_input":
+            self.action_connect()
 
     def action_connect(self):
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
         
-        if not username:
-            self.app.notify("Username cannot be empty!", severity="error")
-            self.query_one("#username_input").focus()
-            return
+        # Only check for forbidden username, no empty field warnings
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
             return
+        
+        # Use defaults if fields are empty
+        if not username:
+            username = "guest"
         if not chat_name:
-            self.app.notify("Chat name cannot be empty!", severity="error")  
-            self.query_one("#chatname_input").focus()
-            return
+            chat_name = "general"
         if not password:
-            self.app.notify("Password cannot be empty!", severity="error")
-            self.query_one("#password_input").focus()
-            return
+            password = "default"
         
         # Start the chat with these credentials
         self.app.start_chat(username, chat_name, password)
@@ -194,8 +196,6 @@ class ConnectionScreen(Screen):
         self.app.exit()
 
 
-class ChatScreen(Screen):
-    """Main chat screen"""
 class ChatScreen(Screen):
     """Main chat screen"""
     
@@ -299,7 +299,7 @@ class ChatScreen(Screen):
     async def on_mount(self):
         """Initialize the chat screen"""
         # Start connection to server
-        await self.app.connect_to_server(self.username, self.chat_name, self.password)
+        await self.connect_to_server()
 
     async def on_input_submitted(self, event: Input.Submitted):
         """Handle user message input"""
@@ -318,10 +318,138 @@ class ChatScreen(Screen):
             return
         
         # Send message to server
-        await self.app.send_message(user_message)
+        await self.send_message(user_message)
 
     def action_quit(self):
         self.app.action_quit()
+
+    async def connect_to_server(self):
+        """Establish WebSocket connection to the backend"""
+        messages_log = self.query_one("#messages", RichLog)
+        
+        try:
+            # Create SSL context with proper settings
+            import ssl
+            ssl_context = ssl.create_default_context()
+            
+            self.app.websocket = await websockets.connect(
+                self.app.server_url,
+                ssl=ssl_context,
+                ping_interval=30,
+                ping_timeout=10,
+                close_timeout=10,
+                max_size=2**20,  # 1MB max message size
+                max_queue=32     # Max queued messages
+            )
+            
+            # Send authentication message
+            auth_message = {
+                "type": "join",
+                "username": self.username,
+                "chatname": self.chat_name,
+                "password": self.password
+            }
+            
+            await self.app.websocket.send(json.dumps(auth_message))
+            
+            # Start listening for messages
+            asyncio.create_task(self.listen_for_messages())
+            
+        except websockets.exceptions.InvalidURI:
+            messages_log.write("[bold red]Error: Invalid server URL[/bold red]")
+            self.app.notify("Invalid server URL", severity="error")
+        except websockets.exceptions.ConnectionClosed:
+            messages_log.write("[bold red]Error: Connection was closed by server[/bold red]") 
+            self.app.notify("Connection closed by server", severity="error")
+        except OSError as e:
+            messages_log.write(f"[bold red]Network error: {e}[/bold red]")
+            self.app.notify(f"Network error: {e}", severity="error")
+        except Exception as e:
+            messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
+            self.app.notify(f"Connection failed: {e}", severity="error")
+
+    async def listen_for_messages(self):
+        """Listen for incoming messages from the server"""
+        messages_log = self.query_one("#messages", RichLog)
+        
+        try:
+            async for message in self.app.websocket:
+                try:
+                    data = json.loads(message)
+                    await self.handle_message(data)
+                except json.JSONDecodeError:
+                    messages_log.write(f"[bold red]Received invalid JSON: {escape(message[:100])}...[/bold red]")
+                except Exception as e:
+                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red]")
+        except websockets.exceptions.ConnectionClosed:
+            messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
+            self.app.connected = False
+            self.query_one("#header").update("TERMCHAT - Disconnected")
+            self.app.notify("Connection lost", severity="warning")
+        except websockets.exceptions.ConnectionClosedError as e:
+            messages_log.write(f"[bold yellow]Connection closed: {e}[/bold yellow]")
+            self.app.connected = False
+            self.query_one("#header").update("TERMCHAT - Connection Closed")
+        except Exception as e:
+            messages_log.write(f"[bold red]Error receiving messages: {e}[/bold red]")
+            self.app.connected = False
+
+    async def handle_message(self, data):
+        """Handle different types of messages from the server"""
+        messages_log = self.query_one("#messages", RichLog)
+        message_type = data.get("type", "")
+        
+        if message_type == "message":
+            username = data.get("username", "Unknown")
+            message = data.get("content", "")
+            user_color = self.app.get_user_color(username)
+            messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
+        
+        elif message_type == "join":
+            username = data.get("username", "Unknown")
+            messages_log.write(f"[bold #00ff00]A wild {username} has appeared.[/bold #00ff00]")
+        
+        elif message_type == "leave":
+            username = data.get("username", "Unknown")
+            messages_log.write(f"[bold #00ff00]{username} has left the chat.[/bold #00ff00]")
+        
+        elif message_type == "error":
+            error_message = data.get("message", "Unknown error")
+            messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
+        
+        elif message_type == "auth_success":
+            self.app.connected = True
+            self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
+            messages_log.write("[bold bright_blue][Server]:[/bold bright_blue] Connected successfully")
+            messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
+            # Focus the input field after successful connection
+            self.query_one("#message_input").focus()
+        
+        elif message_type == "auth_failed":
+            error_message = data.get("message", "Authentication failed")
+            messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
+            self.app.notify(f"Authentication failed: {error_message}", severity="error")
+
+    async def send_message(self, user_message: str):
+        """Send message to server"""
+        if self.app.websocket and self.app.connected:
+            try:
+                message_data = {
+                    "type": "message",
+                    "content": user_message
+                }
+                await self.app.websocket.send(json.dumps(message_data))
+            except websockets.exceptions.ConnectionClosed:
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write("[bold red]Cannot send message: Connection closed[/bold red]")
+                self.app.connected = False
+                self.query_one("#header").update("TERMCHAT - Disconnected")
+            except Exception as e:
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
+        else:
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
 
 class TermchatApp(App):
@@ -351,51 +479,6 @@ class TermchatApp(App):
         chat_screen = ChatScreen(username, chat_name, password)
         self.push_screen(chat_screen)
 
-    async def connect_to_server(self, username: str, chat_name: str, password: str):
-        """Establish WebSocket connection to the backend"""
-        messages_log = self.query_one("#messages", RichLog)
-        
-        try:
-            # Create SSL context with proper settings
-            import ssl
-            ssl_context = ssl.create_default_context()
-            
-            self.websocket = await websockets.connect(
-                self.server_url,
-                ssl=ssl_context,
-                ping_interval=30,
-                ping_timeout=10,
-                close_timeout=10,
-                max_size=2**20,  # 1MB max message size
-                max_queue=32     # Max queued messages
-            )
-            
-            # Send authentication message
-            auth_message = {
-                "type": "join",
-                "username": username,
-                "chatname": chat_name,
-                "password": password
-            }
-            
-            await self.websocket.send(json.dumps(auth_message))
-            
-            # Start listening for messages
-            asyncio.create_task(self.listen_for_messages())
-            
-        except websockets.exceptions.InvalidURI:
-            messages_log.write("[bold red]Error: Invalid server URL[/bold red]")
-            self.notify("Invalid server URL", severity="error")
-        except websockets.exceptions.ConnectionClosed:
-            messages_log.write("[bold red]Error: Connection was closed by server[/bold red]") 
-            self.notify("Connection closed by server", severity="error")
-        except OSError as e:
-            messages_log.write(f"[bold red]Network error: {e}[/bold red]")
-            self.notify(f"Network error: {e}", severity="error")
-        except Exception as e:
-            messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
-            self.notify(f"Connection failed: {e}", severity="error")
-
     def get_user_color(self, username: str) -> str:
         """Get or assign a color for a username"""
         if username.lower() == "server":
@@ -406,90 +489,6 @@ class TermchatApp(App):
             self.color_index += 1
         
         return self.user_colors[username]
-
-    async def listen_for_messages(self):
-        """Listen for incoming messages from the server"""
-        messages_log = self.query_one("#messages", RichLog)
-        
-        try:
-            async for message in self.websocket:
-                try:
-                    data = json.loads(message)
-                    await self.handle_message(data)
-                except json.JSONDecodeError:
-                    messages_log.write(f"[bold red]Received invalid JSON: {escape(message[:100])}...[/bold red]")
-                except Exception as e:
-                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red]")
-        except websockets.exceptions.ConnectionClosed:
-            messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
-            self.connected = False
-            self.query_one("#header").update("TERMCHAT - Disconnected")
-            self.notify("Connection lost", severity="warning")
-        except websockets.exceptions.ConnectionClosedError as e:
-            messages_log.write(f"[bold yellow]Connection closed: {e}[/bold yellow]")
-            self.connected = False
-            self.query_one("#header").update("TERMCHAT - Connection Closed")
-        except Exception as e:
-            messages_log.write(f"[bold red]Error receiving messages: {e}[/bold red]")
-            self.connected = False
-
-    async def handle_message(self, data):
-        """Handle different types of messages from the server"""
-        messages_log = self.query_one("#messages", RichLog)
-        message_type = data.get("type", "")
-        
-        if message_type == "message":
-            username = data.get("username", "Unknown")
-            message = data.get("content", "")
-            user_color = self.get_user_color(username)
-            messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
-        
-        elif message_type == "join":
-            username = data.get("username", "Unknown")
-            messages_log.write(f"[bold #00ff00]A wild {username} has appeared.[/bold #00ff00]")
-        
-        elif message_type == "leave":
-            username = data.get("username", "Unknown")
-            messages_log.write(f"[bold #00ff00]{username} has left the chat.[/bold #00ff00]")
-        
-        elif message_type == "error":
-            error_message = data.get("message", "Unknown error")
-            messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
-        
-        elif message_type == "auth_success":
-            self.connected = True
-            chat_name = self.screen.chat_name if hasattr(self.screen, 'chat_name') else "Unknown"
-            self.query_one("#header").update(f"TERMCHAT - Connected to '{chat_name}'")
-            messages_log.write("[bold bright_blue][Server]:[/bold bright_blue] Connected successfully")
-            messages_log.write(f"[bold #00ff00]Successfully joined chat '{chat_name}'[/bold #00ff00]")
-            # Focus the input field after successful connection
-            self.query_one("#message_input").focus()
-        
-        elif message_type == "auth_failed":
-            error_message = data.get("message", "Authentication failed")
-            messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
-            self.notify(f"Authentication failed: {error_message}", severity="error")
-
-    async def send_message(self, user_message: str):
-        """Send message to server"""
-        if self.websocket and self.connected:
-            try:
-                message_data = {
-                    "type": "message",
-                    "content": user_message
-                }
-                await self.websocket.send(json.dumps(message_data))
-            except websockets.exceptions.ConnectionClosed:
-                messages_log = self.query_one("#messages", RichLog)
-                messages_log.write("[bold red]Cannot send message: Connection closed[/bold red]")
-                self.connected = False
-                self.query_one("#header").update("TERMCHAT - Disconnected")
-            except Exception as e:
-                messages_log = self.query_one("#messages", RichLog)
-                messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
-        else:
-            messages_log = self.query_one("#messages", RichLog)
-            messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
     async def action_quit(self):
         """Quit the application"""
