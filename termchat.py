@@ -40,54 +40,50 @@ class ConnectionDialog(App):
     CSS = """
     Screen {
         align: center middle;
+        background: #000000;
     }
     
     #dialog {
-        width: 50;
-        height: 15;
-        border: thick $primary 80%;
-        background: $surface;
+        width: 70;
+        height: 20;
+        border: thick white;
+        background: #000000;
     }
     
     #title {
         dock: top;
-        width: 100%;
+        height: 3;
         content-align: center middle;
         text-style: bold;
-        color: $primary;
-        background: $primary 20%;
+        color: cyan;
+        background: #111111;
     }
     
-    #form {
-        layout: vertical;
-        height: auto;
-        margin: 1;
-    }
-    
-    .form-row {
+    .input-row {
         height: 3;
+        margin: 1;
         layout: horizontal;
     }
     
     .label {
-        width: 15;
+        width: 20;
         content-align: right middle;
+        color: white;
         margin-right: 1;
     }
     
     .input {
         width: 1fr;
+        background: #111111;
+        color: white;
     }
     
-    #buttons {
+    #help {
         dock: bottom;
-        layout: horizontal;
         height: 3;
-        align: center middle;
-    }
-    
-    .button {
-        margin: 0 1;
+        content-align: center middle;
+        color: yellow;
+        background: #111111;
     }
     """
     
@@ -109,18 +105,20 @@ class ConnectionDialog(App):
     def compose(self) -> ComposeResult:
         with Container(id="dialog"):
             yield Label("TERMCHAT Connection", id="title")
-            with Vertical(id="form"):
-                with Container(classes="form-row"):
-                    yield Label("Username:", classes="label")
-                    yield Input(placeholder="Enter username", id="username_input", classes="input")
-                with Container(classes="form-row"):
-                    yield Label("Chat name:", classes="label")
-                    yield Input(placeholder="Enter chat name", id="chatname_input", classes="input")
-                with Container(classes="form-row"):
-                    yield Label("Password:", classes="label")
-                    yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
-            with Container(id="buttons"):
-                yield Static("Press Tab to navigate fields | Enter to connect | Ctrl+C to quit")
+            
+            with Container(classes="input-row"):
+                yield Label("Username:", classes="label")
+                yield Input(placeholder="Enter username", id="username_input", classes="input")
+            
+            with Container(classes="input-row"):
+                yield Label("Chat name:", classes="label")
+                yield Input(placeholder="Enter chat name", id="chatname_input", classes="input")
+                
+            with Container(classes="input-row"):
+                yield Label("Password:", classes="label")
+                yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
+            
+            yield Label("Tab=Navigate | Enter=Connect | Ctrl+C=Quit", id="help")
 
     def on_mount(self):
         self.query_one("#username_input").focus()
@@ -168,40 +166,46 @@ class TermchatApp(App):
     CSS = """
     Screen {
         layout: vertical;
+        background: #000000;
     }
     
     #header {
         dock: top;
-        height: 3;
+        height: 4;
         background: $primary;
         color: $text;
         content-align: center middle;
         text-style: bold;
+        margin-bottom: 1;
     }
     
     #messages_container {
         height: 1fr;
         border: thick $primary;
-        margin: 0 1;
+        margin: 0 2 1 2;
+        background: #000000;
     }
     
     #messages {
         height: 1fr;
         scrollbar-gutter: stable;
         border: none;
-        background: $surface;
+        background: #000000;
+        color: white;
+        padding: 1;
     }
     
     #input_container {
         dock: bottom;
-        height: 3;
+        height: 4;
         border: thick $accent;
-        margin: 0 1 1 1;
+        margin: 0 2 2 2;
+        background: #000000;
     }
     
     #input_prompt {
         dock: left;
-        width: 16;
+        width: 18;
         content-align: right middle;
         color: $accent;
         background: $accent 10%;
@@ -210,14 +214,17 @@ class TermchatApp(App):
     #message_input {
         width: 1fr;
         border: none;
+        background: #111111;
+        color: white;
     }
     
     #footer {
         dock: bottom;
-        height: 1;
+        height: 2;
         background: $primary 20%;
         color: $text-muted;
         content-align: center middle;
+        margin-top: 1;
     }
     """
     
@@ -235,6 +242,7 @@ class TermchatApp(App):
         self.user_colors: dict = {}  # Maps usernames to colors
         self.color_index: int = 0    # For cycling through colors
         self.connected: bool = False
+        self._listening: bool = False # Track if we have a message listener
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
@@ -250,6 +258,9 @@ class TermchatApp(App):
 
     async def on_mount(self):
         """Initialize the application"""
+        # Focus the input field immediately
+        self.query_one("#message_input").focus()
+        
         # Connect to server
         await self.connect_to_server()
 
@@ -260,11 +271,17 @@ class TermchatApp(App):
         try:
             messages_log.write("[bold blue]Connecting to server...[/bold blue]")
             
+            # Close any existing connection
+            if self.websocket and not self.websocket.closed:
+                await self.websocket.close()
+            
             self.websocket = await websockets.connect(
                 self.server_url,
                 ssl=True,  # Enable SSL for HTTPS
                 ping_interval=30,
-                ping_timeout=10
+                ping_timeout=10,
+                max_size=1_000_000,  # Prevent large message issues
+                compression=None     # Disable compression for cleaner protocol
             )
             
             messages_log.write("[bold green]Connected to Termchat server![/bold green]")
@@ -279,8 +296,10 @@ class TermchatApp(App):
             
             await self.websocket.send(json.dumps(auth_message))
             
-            # Start listening for messages
-            asyncio.create_task(self.listen_for_messages())
+            # Start listening for messages (ensure only one listener)
+            if not hasattr(self, '_listening'):
+                self._listening = True
+                asyncio.create_task(self.listen_for_messages())
             
         except Exception as e:
             messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
@@ -302,18 +321,38 @@ class TermchatApp(App):
         messages_log = self.query_one("#messages", RichLog)
         
         try:
-            async for message in self.websocket:
+            while not self.websocket.closed:
                 try:
-                    data = json.loads(message)
-                    await self.handle_message(data)
-                except json.JSONDecodeError:
-                    messages_log.write(f"[bold red]Received invalid message: {escape(message)}[/bold red]")
+                    # Use asyncio.wait_for to handle timeouts gracefully
+                    message = await asyncio.wait_for(self.websocket.recv(), timeout=60.0)
+                    
+                    try:
+                        data = json.loads(message)
+                        await self.handle_message(data)
+                    except json.JSONDecodeError:
+                        messages_log.write(f"[bold red]Received invalid message: {escape(message)}[/bold red]")
+                        
+                except asyncio.TimeoutError:
+                    # Ping timeout - connection might be dead
+                    if not self.websocket.closed:
+                        await self.websocket.ping()
+                except websockets.exceptions.ConnectionClosed:
+                    break
+                except Exception as e:
+                    messages_log.write(f"[bold red]Error receiving message: {e}[/bold red]")
+                    break
+                    
         except websockets.exceptions.ConnectionClosed:
-            messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
-            self.connected = False
-            self.query_one("#header").update("TERMCHAT - Disconnected")
+            pass
         except Exception as e:
-            messages_log.write(f"[bold red]Error receiving messages: {e}[/bold red]")
+            messages_log.write(f"[bold red]Error in message listener: {e}[/bold red]")
+        finally:
+            # Connection lost
+            if self.connected:
+                messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
+                self.connected = False
+                self.query_one("#header").update("TERMCHAT - Disconnected")
+                self._listening = False
 
     async def handle_message(self, data):
         """Handle different types of messages from the server"""
@@ -367,17 +406,25 @@ class TermchatApp(App):
             await self.action_quit()
             return
         
-        # Send message to server
-        if self.websocket and self.connected:
+        # Send message to server only if connected
+        if self.websocket and not self.websocket.closed and self.connected:
             try:
                 message_data = {
                     "type": "message",
                     "content": user_message
                 }
                 await self.websocket.send(json.dumps(message_data))
+            except websockets.exceptions.ConnectionClosed:
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write("[bold red]Cannot send message - connection lost[/bold red]")
+                self.connected = False
+                self.query_one("#header").update("TERMCHAT - Disconnected")
             except Exception as e:
                 messages_log = self.query_one("#messages", RichLog)
                 messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
+        else:
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.write("[bold red]Not connected to server[/bold red]")
 
     async def action_quit(self):
         """Quit the application"""
