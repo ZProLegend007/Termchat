@@ -100,9 +100,37 @@ class TermchatClient:
         self.running: bool = True
         self.user_colors: dict = {}  # Maps usernames to colors
         self.color_index: int = 0    # For cycling through colors
+        self.terminal_height: int = 24  # Default height, will be updated
+        self.terminal_width: int = 80   # Default width, will be updated
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
+    
+    def update_terminal_size(self):
+        """Update terminal dimensions"""
+        if hasattr(os, 'get_terminal_size'):
+            size = os.get_terminal_size()
+            self.terminal_height = size.lines
+            self.terminal_width = size.columns
+        else:
+            self.terminal_height = 24
+            self.terminal_width = 80
+    
+    def position_input_at_bottom(self):
+        """Position cursor at the bottom of the terminal for input"""
+        # Move cursor to last line and clear it
+        print(f"\033[{self.terminal_height};1H\033[K", end="")
+    
+    def display_message_in_chat_area(self, message):
+        """Display a message in the chat area (above the input line)"""
+        # Save current cursor position
+        print("\033[s", end="")
+        # Move to second-to-last line
+        print(f"\033[{self.terminal_height-1};1H", end="")
+        # Insert a new line and scroll up content
+        print(f"\033[L{message}", end="")
+        # Restore cursor position (input area)
+        print("\033[u", end="", flush=True)
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
@@ -189,10 +217,6 @@ class TermchatClient:
     def display_header_bar(self):
         """Display blue header bar when connected"""
         terminal_width = os.get_terminal_size().columns if hasattr(os, 'get_terminal_size') else 80
-        header = f"TERMCHAT - Chat: {self.chat_name} - User: {self.username}"
-        padding = max(0, terminal_width - len(header))
-        padded_header = header + " " * padding
-        print(f"{Colors.BOLD}{Colors.BRIGHT_BLUE}{padded_header}{Colors.RESET}")
         print(f"{Colors.BOLD}{Colors.BRIGHT_BLUE}{'=' * terminal_width}{Colors.RESET}")
         print()
     
@@ -218,24 +242,25 @@ class TermchatClient:
             username = data.get("username", "Unknown")
             message = data.get("content", "")
             user_color = self.get_user_color(username)
-            print(f"{user_color}[{username}]:{Colors.RESET} {message}")
+            self.display_message_in_chat_area(f"{user_color}[{username}]:{Colors.RESET} {message}")
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            print(f"{Colors.BRIGHT_GREEN}A wild {username} has appeared.{Colors.RESET}")
+            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}A wild {username} has appeared.{Colors.RESET}")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
-            print(f"{Colors.BRIGHT_GREEN}{username} has left the chat.{Colors.RESET}")
+            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}{username} has left the chat.{Colors.RESET}")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
-            print(f"{Colors.RED}Error: {error_message}{Colors.RESET}")
+            self.display_message_in_chat_area(f"{Colors.RED}Error: {error_message}{Colors.RESET}")
         
         elif message_type == "auth_success":
-            print(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
+            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
             # Clear terminal and show header bar after successful authentication
             clear_terminal()
+            self.update_terminal_size()
             self.display_header_bar()
         
         elif message_type == "auth_failed":
@@ -248,6 +273,9 @@ class TermchatClient:
         try:
             while self.running:
                 try:
+                    # Position cursor at bottom for input
+                    self.position_input_at_bottom()
+                    
                     # Use asyncio to get user input without blocking
                     user_message = await asyncio.get_event_loop().run_in_executor(
                         None, input, f"{Colors.CYAN}Enter message: {Colors.RESET}"
@@ -268,18 +296,16 @@ class TermchatClient:
                         }
                         
                         await self.websocket.send(json.dumps(message_data))
-                        # Clear the input line after sending (message will appear when echoed back)
-                        print(f"\033[A\033[K", end="")  # Move up and clear line
                 
                 except (KeyboardInterrupt, EOFError):
                     self.running = False
                     break
                 except Exception as e:
                     if self.running:
-                        print(f"{Colors.RED}Error sending message: {e}{Colors.RESET}")
+                        self.display_message_in_chat_area(f"{Colors.RED}Error sending message: {e}{Colors.RESET}")
         
         except Exception as e:
-            print(f"{Colors.RED}Input handling error: {e}{Colors.RESET}")
+            self.display_message_in_chat_area(f"{Colors.RED}Input handling error: {e}{Colors.RESET}")
     
     async def run(self):
         """Main client loop"""
