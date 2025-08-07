@@ -8,9 +8,7 @@ Cross-platform Python terminal client for real-time chat. Connect to the termcha
 - HTTPS WebSocket connection on port 443 (works on restricted networks)
 - Real-time messaging with other users
 - Simple authentication (username, chat name, password)
-- Clean terminal interface with green/black color scheme
-- Minimal output - only real server messages shown
-- Progress animation during connection
+- Clean terminal interface with formatted messages
 
 ## Installation
 
@@ -33,14 +31,10 @@ chmod +x termchat.py
 ./termchat.py
 ```
 
-The application will show:
-1. ASCII art splash screen
-2. Login form with clearly visible fields for:
-   - **Username**: Your display name in the chat
-   - **Chat name**: The chat room to join  
-   - **Password**: Password for the chat room
-3. Connection progress animation
-4. Chat interface once connected
+The script will prompt you for:
+- **Username**: Your display name in the chat
+- **Chat name**: The chat room to join
+- **Password**: Password for the chat room
 
 ## Chat Interface
 
