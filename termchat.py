@@ -13,8 +13,6 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
 from textual.widgets import Input, RichLog, Static, Label
 from textual.binding import Binding
-from textual.screen import Screen
-from rich.text import Text
 from rich.markup import escape
 
 # User colors for cycling through usernames
@@ -292,7 +290,7 @@ class TermchatApp(App):
 
     def __init__(self, username: str, chat_name: str, password: str):
         super().__init__()
-        self.websocket: Optional[websockets.WebSocketServerProtocol] = None
+        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.username = username
         self.chat_name = chat_name
         self.password = password
@@ -464,9 +462,6 @@ class TermchatApp(App):
                     "content": user_message
                 }
                 await self.websocket.send(json.dumps(message_data))
-                # Show the message being sent for immediate feedback
-                messages_log = self.query_one("#messages", RichLog)
-                messages_log.write(f"[dim #888888]Sending: {escape(user_message)}[/dim #888888]")
             except websockets.exceptions.ConnectionClosed:
                 messages_log = self.query_one("#messages", RichLog)
                 messages_log.write("[bold red]Cannot send message: Connection closed[/bold red]")
