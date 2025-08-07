@@ -66,6 +66,10 @@ class SplashScreen(Screen):
 class ConnectionScreen(Screen):
     """Modal screen for connection details"""
     
+    def __init__(self):
+        super().__init__()
+        self.connecting = False
+    
     CSS = """
     ConnectionScreen {
         align: center middle;
@@ -112,7 +116,7 @@ class ConnectionScreen(Screen):
     }
     
     .input {
-        width: 25;
+        width: 35;
         height: 1;
         background: #111111;
         color: white;
@@ -127,10 +131,17 @@ class ConnectionScreen(Screen):
     #buttons {
         dock: bottom;
         layout: horizontal;
-        height: 4;
+        height: 2;
         align: center middle;
         background: black;
-        padding: 1 0;
+        padding: 0;
+    }
+    
+    #status_label {
+        width: 40;
+        content-align: center middle;
+        color: yellow;
+        text-style: bold;
     }
     """
     
@@ -155,8 +166,11 @@ class ConnectionScreen(Screen):
                 with Container(classes="form-row"):
                     yield Label("Password:", classes="label")
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
+                # Status label for connection feedback
+                with Container(classes="form-row"):
+                    yield Label("", id="status_label", classes="label")
             with Container(id="buttons"):
-                yield Static("[bold #00ff00]Tab[/bold #00ff00]: Navigate • [bold #00ff00]Enter[/bold #00ff00]: Connect • [bold #00ff00]Ctrl+C[/bold #00ff00]: Quit")
+                pass  # Removed command hints as requested
 
     def on_mount(self):
         self.query_one("#username_input").focus()
@@ -168,9 +182,12 @@ class ConnectionScreen(Screen):
         elif event.input.id == "chatname_input":
             self.query_one("#password_input").focus()
         elif event.input.id == "password_input":
-            self.action_connect()
+            await self.action_connect()
 
-    def action_connect(self):
+    async def action_connect(self):
+        if self.connecting:
+            return  # Already connecting
+            
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
@@ -189,8 +206,70 @@ class ConnectionScreen(Screen):
         if not password:
             password = "default"
         
-        # Start the chat with these credentials
-        self.app.start_chat(username, chat_name, password)
+        # Show connecting status
+        self.connecting = True
+        status_label = self.query_one("#status_label")
+        status_label.update("[yellow]Connecting...[/yellow]")
+        
+        # Attempt connection first
+        try:
+            await self.test_connection(username, chat_name, password)
+            # If successful, start the chat
+            self.app.start_chat(username, chat_name, password)
+        except Exception as e:
+            # Connection failed, show error and reset
+            self.connecting = False
+            status_label.update(f"[red]Connection failed: {str(e)}[/red]")
+            self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
+
+    async def test_connection(self, username: str, chat_name: str, password: str):
+        """Test connection to server before proceeding to chat"""
+        import ssl
+        ssl_context = ssl.create_default_context()
+        
+        # Test connection
+        test_ws = await websockets.connect(
+            self.app.server_url,
+            ssl=ssl_context,
+            ping_interval=30,
+            ping_timeout=10,
+            close_timeout=5,
+            max_size=2**20,
+            max_queue=32
+        )
+        
+        # Send test auth message
+        auth_message = {
+            "type": "join",
+            "username": username,
+            "chatname": chat_name,
+            "password": password
+        }
+        
+        await test_ws.send(json.dumps(auth_message))
+        
+        # Wait for response (with timeout)
+        try:
+            response = await asyncio.wait_for(test_ws.recv(), timeout=5.0)
+            data = json.loads(response)
+            
+            # Check if join was successful
+            if data.get("type") == "join" and data.get("username") == username:
+                await test_ws.close()
+                return True
+            elif data.get("type") == "error":
+                await test_ws.close()
+                raise Exception(data.get("message", "Unknown error"))
+            else:
+                await test_ws.close()
+                raise Exception("Unexpected server response")
+                
+        except asyncio.TimeoutError:
+            await test_ws.close()
+            raise Exception("Connection timeout")
+        except Exception as e:
+            await test_ws.close()
+            raise e
 
     def action_quit(self):
         self.app.exit()
@@ -219,8 +298,8 @@ class ChatScreen(Screen):
     
     #messages_container {
         height: 1fr;
-        border: solid #00ff00;
-        margin: 1;
+        border: thin #00ff00;
+        margin: 0;
         background: black;
     }
     
@@ -236,8 +315,8 @@ class ChatScreen(Screen):
     #input_container {
         dock: bottom;
         height: 4;
-        border: solid #00ff00;
-        margin: 0 1 1 1;
+        border: thin #00ff00;
+        margin: 0 0 1 0;
         background: black;
     }
     
@@ -355,18 +434,11 @@ class ChatScreen(Screen):
             # Start listening for messages
             asyncio.create_task(self.listen_for_messages())
             
-        except websockets.exceptions.InvalidURI:
-            messages_log.write("[bold red]Error: Invalid server URL[/bold red]")
-            self.app.notify("Invalid server URL", severity="error")
-        except websockets.exceptions.ConnectionClosed:
-            messages_log.write("[bold red]Error: Connection was closed by server[/bold red]") 
-            self.app.notify("Connection closed by server", severity="error")
-        except OSError as e:
-            messages_log.write(f"[bold red]Network error: {e}[/bold red]")
-            self.app.notify(f"Network error: {e}", severity="error")
         except Exception as e:
             messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
             self.app.notify(f"Connection failed: {e}", severity="error")
+            # Go back to connection screen if connection fails
+            self.app.pop_screen()
 
     async def listen_for_messages(self):
         """Listen for incoming messages from the server"""
@@ -407,7 +479,16 @@ class ChatScreen(Screen):
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            messages_log.write(f"[bold #00ff00]A wild {username} has appeared.[/bold #00ff00]")
+            # If it's our own join message, it means successful connection
+            if username == self.username:
+                self.app.connected = True
+                self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
+                messages_log.write("[bold bright_blue][Server]:[/bold bright_blue] Connected successfully")
+                messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
+                # Focus the input field after successful connection
+                self.query_one("#message_input").focus()
+            else:
+                messages_log.write(f"[bold #00ff00]A wild {username} has appeared.[/bold #00ff00]")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
@@ -416,19 +497,17 @@ class ChatScreen(Screen):
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
             messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
-        
-        elif message_type == "auth_success":
-            self.app.connected = True
-            self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
-            messages_log.write("[bold bright_blue][Server]:[/bold bright_blue] Connected successfully")
-            messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
-            # Focus the input field after successful connection
-            self.query_one("#message_input").focus()
+            # If connection failed, go back to connection screen
+            if not self.app.connected:
+                self.app.notify(f"Connection failed: {error_message}", severity="error")
+                self.app.pop_screen()  # Return to connection screen
         
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
             messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
             self.app.notify(f"Authentication failed: {error_message}", severity="error")
+            # Go back to connection screen
+            self.app.pop_screen()
 
     async def send_message(self, user_message: str):
         """Send message to server"""
