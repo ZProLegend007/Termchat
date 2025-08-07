@@ -122,26 +122,19 @@ class TermchatClient:
         # Add message to history
         self.messages.append(message)
         
-        # Clear the current input line
-        print('\r' + ' ' * 80, end='\r', flush=True)
-        
-        # Print the message 
+        # Print the message without clearing the input prompt
         print(message)
         
-        # Add spacing before input prompt
+        # Add spacing before next message
         print()
-        
-        # No need to reprint input prompt here - it will be handled in send_user_input
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
         def signal_handler(signum, frame):
             print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
             self.running = False
-            # Force exit if signal handler is called
-            if self.websocket:
-                asyncio.create_task(self.websocket.close())
-            sys.exit(0)
+            # Immediate exit on Ctrl-C
+            os._exit(0)
         
         signal.signal(signal.SIGINT, signal_handler)
         if hasattr(signal, 'SIGTERM'):
@@ -297,18 +290,13 @@ class TermchatClient:
                                 await self.websocket.close()
                             return
                         
-                        # Clear the input line before sending message
-                        print('\r' + ' ' * 80, end='\r', flush=True)
-                        
+                        # Send the message without clearing the input line
                         message_data = {
                             "type": "message",
                             "content": user_message
                         }
                         
                         await self.websocket.send(json.dumps(message_data))
-                        
-                        # Add a blank line for spacing after sending
-                        print()
                 
                 except (KeyboardInterrupt, EOFError):
                     print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
