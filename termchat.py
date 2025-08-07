@@ -102,6 +102,7 @@ class TermchatClient:
         self.color_index: int = 0    # For cycling through colors
         self.terminal_height: int = 24  # Default height, will be updated
         self.terminal_width: int = 80   # Default width, will be updated
+        self.messages: list = []  # Store chat messages
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
@@ -118,13 +119,29 @@ class TermchatClient:
     
     def display_message_in_chat_area(self, message):
         """Display a message in the chat area (above the input line)"""
+        # Add message to history
+        self.messages.append(message)
+        
+        # Clear the current input line
+        print('\r' + ' ' * 80, end='\r', flush=True)
+        
+        # Print the message 
         print(message)
+        
+        # Add spacing before input prompt
+        print()
+        
+        # No need to reprint input prompt here - it will be handled in send_user_input
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
         def signal_handler(signum, frame):
             print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
             self.running = False
+            # Force exit if signal handler is called
+            if self.websocket:
+                asyncio.create_task(self.websocket.close())
+            sys.exit(0)
         
         signal.signal(signal.SIGINT, signal_handler)
         if hasattr(signal, 'SIGTERM'):
@@ -250,6 +267,7 @@ class TermchatClient:
             clear_terminal()
             self.update_terminal_size()
             self.display_header_bar()
+            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}[Server]: Connected successfully{Colors.RESET}")
             self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
         
         elif message_type == "auth_failed":
@@ -273,8 +291,14 @@ class TermchatClient:
                     user_message = user_message.strip()
                     if user_message:
                         if user_message.lower() in ['/quit', '/exit', '/q']:
+                            print(f"{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
                             self.running = False
-                            break
+                            if self.websocket:
+                                await self.websocket.close()
+                            return
+                        
+                        # Clear the input line before sending message
+                        print('\r' + ' ' * 80, end='\r', flush=True)
                         
                         message_data = {
                             "type": "message",
@@ -282,10 +306,16 @@ class TermchatClient:
                         }
                         
                         await self.websocket.send(json.dumps(message_data))
+                        
+                        # Add a blank line for spacing after sending
+                        print()
                 
                 except (KeyboardInterrupt, EOFError):
+                    print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
                     self.running = False
-                    break
+                    if self.websocket:
+                        await self.websocket.close()
+                    return
                 except Exception as e:
                     if self.running:
                         self.display_message_in_chat_area(f"{Colors.RED}Error sending message: {e}{Colors.RESET}")
@@ -320,11 +350,13 @@ class TermchatClient:
             # Start listening for messages and handling user input concurrently
             await asyncio.gather(
                 self.listen_for_messages(),
-                self.send_user_input()
+                self.send_user_input(),
+                return_exceptions=True
             )
         except Exception as e:
             print(f"{Colors.RED}Runtime error: {e}{Colors.RESET}")
         finally:
+            self.running = False
             if self.websocket:
                 await self.websocket.close()
             print(f"{Colors.BRIGHT_GREEN}Disconnected from Termchat server.{Colors.RESET}")
