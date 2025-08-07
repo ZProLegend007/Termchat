@@ -10,11 +10,8 @@ import json
 import sys
 from typing import Optional
 from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical
-from textual.widgets import Input, RichLog, Static, Label
+from textual.widgets import Input, RichLog, Label
 from textual.binding import Binding
-from textual.screen import Screen
-from rich.text import Text
 from rich.markup import escape
 
 # User colors for cycling through usernames
@@ -24,129 +21,64 @@ USER_COLORS = [
     "bright_magenta", "bright_cyan"
 ]
 
-# ASCII Art for TERMCHAT
-TERMCHAT_ASCII = """
-████████ ███████ ██████  ███    ███  ██████ ██   ██  █████  ████████ 
-   ██    ██      ██   ██ ████  ████ ██      ██   ██ ██   ██    ██    
-   ██    █████   ██████  ██ ████ ██ ██      ███████ ███████    ██    
-   ██    ██      ██   ██ ██  ██  ██ ██      ██   ██ ██   ██    ██    
-   ██    ███████ ██   ██ ██      ██  ██████ ██   ██ ██   ██    ██    
-"""
-
 
 class ConnectionDialog(App):
-    """Modal dialog for connection details"""
+    """Simple connection dialog"""
     
     CSS = """
     Screen {
-        align: center middle;
         background: #000000;
     }
     
-    #dialog {
-        width: 70;
-        height: 20;
-        border: thick white;
+    Label {
+        color: white;
         background: #000000;
     }
     
-    #title {
-        dock: top;
-        height: 3;
-        content-align: center middle;
-        text-style: bold;
-        color: cyan;
-        background: #111111;
-    }
-    
-    .input-row {
-        height: 3;
-        margin: 1;
-        layout: horizontal;
-    }
-    
-    .label {
-        width: 20;
-        content-align: right middle;
-        color: white;
-        margin-right: 1;
-    }
-    
-    .input {
-        width: 1fr;
+    Input {
         background: #111111;
         color: white;
-    }
-    
-    #help {
-        dock: bottom;
-        height: 3;
-        content-align: center middle;
-        color: yellow;
-        background: #111111;
     }
     """
     
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
-        Binding("escape", "quit", "Quit"),
-        Binding("tab", "focus_next", "Next Field"),
-        Binding("shift+tab", "focus_previous", "Previous Field"),
         Binding("enter", "connect", "Connect"),
     ]
 
     def __init__(self):
         super().__init__()
-        self.username = ""
-        self.chat_name = ""
-        self.password = ""
         self.result = None
 
     def compose(self) -> ComposeResult:
-        with Container(id="dialog"):
-            yield Label("TERMCHAT Connection", id="title")
-            
-            with Container(classes="input-row"):
-                yield Label("Username:", classes="label")
-                yield Input(placeholder="Enter username", id="username_input", classes="input")
-            
-            with Container(classes="input-row"):
-                yield Label("Chat name:", classes="label")
-                yield Input(placeholder="Enter chat name", id="chatname_input", classes="input")
-                
-            with Container(classes="input-row"):
-                yield Label("Password:", classes="label")
-                yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
-            
-            yield Label("Tab=Navigate | Enter=Connect | Ctrl+C=Quit", id="help")
+        yield Label("=== TERMCHAT CONNECTION ===")
+        yield Label("")
+        yield Label("Username:")
+        yield Input(placeholder="Enter username", id="username_input")
+        yield Label("")
+        yield Label("Chat name:")
+        yield Input(placeholder="Enter chat name", id="chatname_input")  
+        yield Label("")
+        yield Label("Password:")
+        yield Input(placeholder="Enter password", password=True, id="password_input")
+        yield Label("")
+        yield Label("Press Enter to connect | Ctrl+C to quit")
 
     def on_mount(self):
         self.query_one("#username_input").focus()
     
-    async def on_input_submitted(self, event: Input.Submitted):
-        """Handle Enter key in any input field"""
-        self.action_connect()
-
     def action_connect(self):
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
         
         if not username:
-            self.notify("Username cannot be empty!", severity="error")
-            self.query_one("#username_input").focus()
             return
         if username.lower() == "server":
-            self.notify("Username 'server' is forbidden!", severity="error")
-            self.query_one("#username_input").focus()
             return
         if not chat_name:
-            self.notify("Chat name cannot be empty!", severity="error")  
-            self.query_one("#chatname_input").focus()
             return
         if not password:
-            self.notify("Password cannot be empty!", severity="error")
-            self.query_one("#password_input").focus()
             return
         
         self.result = {
@@ -161,7 +93,7 @@ class ConnectionDialog(App):
 
 
 class TermchatApp(App):
-    """Main Termchat application with proper UI windowing"""
+    """Main Termchat application"""
     
     CSS = """
     Screen {
@@ -171,60 +103,39 @@ class TermchatApp(App):
     
     #header {
         dock: top;
-        height: 4;
-        background: $primary;
-        color: $text;
+        height: 3;
+        background: #333333;
+        color: white;
         content-align: center middle;
         text-style: bold;
-        margin-bottom: 1;
-    }
-    
-    #messages_container {
-        height: 1fr;
-        border: thick $primary;
-        margin: 0 2 1 2;
-        background: #000000;
     }
     
     #messages {
         height: 1fr;
-        scrollbar-gutter: stable;
-        border: none;
         background: #000000;
         color: white;
-        padding: 1;
+        border: solid white;
     }
     
     #input_container {
         dock: bottom;
-        height: 4;
-        border: thick $accent;
-        margin: 0 2 2 2;
+        height: 3;
         background: #000000;
-    }
-    
-    #input_prompt {
-        dock: left;
-        width: 18;
-        content-align: right middle;
-        color: $accent;
-        background: $accent 10%;
+        color: white;
     }
     
     #message_input {
-        width: 1fr;
-        border: none;
         background: #111111;
         color: white;
+        border: solid cyan;
     }
     
     #footer {
         dock: bottom;
-        height: 2;
-        background: $primary 20%;
-        color: $text-muted;
+        height: 1;
+        background: #222222;
+        color: gray;
         content-align: center middle;
-        margin-top: 1;
     }
     """
     
@@ -239,29 +150,23 @@ class TermchatApp(App):
         self.username = username
         self.chat_name = chat_name
         self.password = password
-        self.user_colors: dict = {}  # Maps usernames to colors
-        self.color_index: int = 0    # For cycling through colors
+        self.user_colors: dict = {}
+        self.color_index: int = 0
         self.connected: bool = False
-        self._listening: bool = False # Track if we have a message listener
+        self._listening: bool = False
         
-        # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
 
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
-        with Container(id="messages_container"):
-            yield RichLog(id="messages", highlight=True, markup=True)
-        with Container(id="input_container"):
-            yield Label("Enter message:", id="input_prompt")
-            yield Input(placeholder="Type your message here...", id="message_input")
+        yield RichLog(id="messages", highlight=True, markup=True)
+        yield Label("Message:", id="input_container")
+        yield Input(placeholder="Type your message here...", id="message_input")
         yield Label("Commands: /quit, /exit, /q to quit | Ctrl+C to force quit", id="footer")
 
     async def on_mount(self):
         """Initialize the application"""
-        # Focus the input field immediately
         self.query_one("#message_input").focus()
-        
-        # Connect to server
         await self.connect_to_server()
 
     async def connect_to_server(self):
@@ -277,11 +182,11 @@ class TermchatApp(App):
             
             self.websocket = await websockets.connect(
                 self.server_url,
-                ssl=True,  # Enable SSL for HTTPS
+                ssl=True,
                 ping_interval=30,
                 ping_timeout=10,
-                max_size=1_000_000,  # Prevent large message issues
-                compression=None     # Disable compression for cleaner protocol
+                max_size=1_000_000,
+                compression=None
             )
             
             messages_log.write("[bold green]Connected to Termchat server![/bold green]")
@@ -297,13 +202,12 @@ class TermchatApp(App):
             await self.websocket.send(json.dumps(auth_message))
             
             # Start listening for messages (ensure only one listener)
-            if not hasattr(self, '_listening'):
+            if not self._listening:
                 self._listening = True
                 asyncio.create_task(self.listen_for_messages())
             
         except Exception as e:
             messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
-            self.notify(f"Connection failed: {e}", severity="error")
 
     def get_user_color(self, username: str) -> str:
         """Get or assign a color for a username"""
@@ -323,7 +227,6 @@ class TermchatApp(App):
         try:
             while not self.websocket.closed:
                 try:
-                    # Use asyncio.wait_for to handle timeouts gracefully
                     message = await asyncio.wait_for(self.websocket.recv(), timeout=60.0)
                     
                     try:
@@ -388,7 +291,6 @@ class TermchatApp(App):
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
             messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
-            self.notify(f"Authentication failed: {error_message}", severity="error")
 
     async def on_input_submitted(self, event: Input.Submitted):
         """Handle user message input"""
