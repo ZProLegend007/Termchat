@@ -22,7 +22,7 @@ class TermchatClient:
         self.running: bool = True
         
         # Backend server URL (HTTPS WebSocket on port 443)
-        self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net:443"
+        self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
@@ -76,9 +76,9 @@ class TermchatClient:
     async def authenticate(self):
         """Send authentication message to server"""
         auth_message = {
-            "type": "auth",
+            "type": "join",
             "username": self.username,
-            "chat_name": self.chat_name,
+            "chatname": self.chat_name,
             "password": self.password
         }
         
@@ -107,16 +107,16 @@ class TermchatClient:
         """Handle different types of messages from the server"""
         message_type = data.get("type", "")
         
-        if message_type == "chat":
+        if message_type == "message":
             username = data.get("username", "Unknown")
-            message = data.get("message", "")
+            message = data.get("content", "")
             print(f"[{username}]: {message}")
         
-        elif message_type == "user_joined":
+        elif message_type == "join":
             username = data.get("username", "Unknown")
             print(f"A wild {username} has appeared.")
         
-        elif message_type == "user_left":
+        elif message_type == "leave":
             username = data.get("username", "Unknown")
             print(f"{username} has left the chat.")
         
@@ -152,8 +152,8 @@ class TermchatClient:
                             break
                         
                         message_data = {
-                            "type": "chat",
-                            "message": user_message
+                            "type": "message",
+                            "content": user_message
                         }
                         
                         await self.websocket.send(json.dumps(message_data))
