@@ -227,49 +227,71 @@ class ConnectionScreen(Screen):
         import ssl
         ssl_context = ssl.create_default_context()
         
-        # Test connection
-        test_ws = await websockets.connect(
-            self.app.server_url,
-            ssl=ssl_context,
-            ping_interval=30,
-            ping_timeout=10,
-            close_timeout=5,
-            max_size=2**20,
-            max_queue=32
-        )
-        
-        # Send test auth message
-        auth_message = {
-            "type": "join",
-            "username": username,
-            "chatname": chat_name,
-            "password": password
-        }
-        
-        await test_ws.send(json.dumps(auth_message))
-        
-        # Wait for response (with timeout)
         try:
-            response = await asyncio.wait_for(test_ws.recv(), timeout=5.0)
-            data = json.loads(response)
+            # Test connection
+            test_ws = await websockets.connect(
+                self.app.server_url,
+                ssl=ssl_context,
+                ping_interval=30,
+                ping_timeout=10,
+                close_timeout=5,
+                max_size=2**20,
+                max_queue=32
+            )
             
-            # Check if join was successful
-            if data.get("type") == "join" and data.get("username") == username:
-                await test_ws.close()
-                return True
-            elif data.get("type") == "error":
-                await test_ws.close()
-                raise Exception(data.get("message", "Unknown error"))
-            else:
-                await test_ws.close()
-                raise Exception("Unexpected server response")
+            # Send test auth message
+            auth_message = {
+                "type": "join",
+                "username": username,
+                "chatname": chat_name,
+                "password": password
+            }
+            
+            await test_ws.send(json.dumps(auth_message))
+            
+            # Wait for response (with timeout)
+            try:
+                response = await asyncio.wait_for(test_ws.recv(), timeout=5.0)
+                data = json.loads(response)
                 
-        except asyncio.TimeoutError:
-            await test_ws.close()
-            raise Exception("Connection timeout")
+                # Check if join was successful
+                if data.get("type") == "join" and data.get("username") == username:
+                    await test_ws.close()
+                    return True
+                elif data.get("type") == "error":
+                    await test_ws.close()
+                    raise Exception(data.get("message", "Unknown error"))
+                else:
+                    await test_ws.close()
+                    raise Exception("Unexpected server response")
+                    
+            except asyncio.TimeoutError:
+                await test_ws.close()
+                raise Exception("Server response timeout")
+            except Exception as e:
+                await test_ws.close()
+                raise e
+                
+        except websockets.exceptions.InvalidStatusCode as e:
+            if e.status_code == 403:
+                raise Exception("Server is currently disabled or unavailable")
+            else:
+                raise Exception(f"Server rejected connection: HTTP {e.status_code}")
+        except OSError as e:
+            if "Name or service not known" in str(e):
+                raise Exception("Cannot resolve server address")
+            elif "Connection refused" in str(e):
+                raise Exception("Server is not responding")
+            else:
+                raise Exception(f"Network error: {str(e)}")
         except Exception as e:
-            await test_ws.close()
-            raise e
+            if "server rejected WebSocket connection" in str(e):
+                if "403" in str(e):
+                    raise Exception("Server is currently disabled or unavailable")
+                else:
+                    raise Exception("Server rejected connection")
+            else:
+                raise Exception(f"Connection failed: {str(e)}")
 
     def action_quit(self):
         self.app.exit()
@@ -434,10 +456,31 @@ class ChatScreen(Screen):
             # Start listening for messages
             asyncio.create_task(self.listen_for_messages())
             
+        except websockets.exceptions.InvalidStatusCode as e:
+            if e.status_code == 403:
+                error_msg = "Server is currently disabled or unavailable"
+            else:
+                error_msg = f"Server rejected connection: HTTP {e.status_code}"
+            messages_log.write(f"[bold red]{error_msg}[/bold red]")
+            self.app.notify(error_msg, severity="error")
+            self.app.pop_screen()
+        except OSError as e:
+            if "Name or service not known" in str(e):
+                error_msg = "Cannot resolve server address"
+            elif "Connection refused" in str(e):
+                error_msg = "Server is not responding"
+            else:
+                error_msg = f"Network error: {str(e)}"
+            messages_log.write(f"[bold red]{error_msg}[/bold red]")
+            self.app.notify(error_msg, severity="error")
+            self.app.pop_screen()
         except Exception as e:
-            messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
-            self.app.notify(f"Connection failed: {e}", severity="error")
-            # Go back to connection screen if connection fails
+            if "server rejected WebSocket connection" in str(e) and "403" in str(e):
+                error_msg = "Server is currently disabled or unavailable"
+            else:
+                error_msg = f"Failed to connect to server: {e}"
+            messages_log.write(f"[bold red]{error_msg}[/bold red]")
+            self.app.notify(error_msg, severity="error")
             self.app.pop_screen()
 
     async def listen_for_messages(self):
