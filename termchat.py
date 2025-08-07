@@ -15,7 +15,7 @@ import threading
 import queue
 from typing import Optional
 
-# ANSI Color codes
+# ANSI Color codes and cursor controls
 class Colors:
     RESET = '\033[0m'
     BOLD = '\033[1m'
@@ -37,6 +37,33 @@ class Colors:
     BRIGHT_MAGENTA = '\033[95m'
     BRIGHT_CYAN = '\033[96m'
     BRIGHT_WHITE = '\033[97m'
+
+# ANSI escape codes for cursor control
+class Cursor:
+    HIDE = '\033[?25l'        # Hide cursor
+    SHOW = '\033[?25h'        # Show cursor
+    SAVE_POS = '\033[s'       # Save cursor position
+    RESTORE_POS = '\033[u'    # Restore cursor position
+    
+    @staticmethod
+    def move_to(row, col):
+        """Move cursor to specific position (1-indexed)"""
+        return f'\033[{row};{col}H'
+    
+    @staticmethod
+    def move_to_bottom():
+        """Move cursor to bottom of terminal"""
+        return '\033[999;1H'  # Move to row 999 (terminal will clamp to actual bottom)
+    
+    @staticmethod
+    def clear_line():
+        """Clear entire current line"""
+        return '\033[2K'
+    
+    @staticmethod
+    def clear_to_end():
+        """Clear from cursor to end of line"""
+        return '\033[K'
 
 # ASCII Art for TERMCHAT
 TERMCHAT_ASCII = """
@@ -106,6 +133,7 @@ class TermchatClient:
         self.messages: list = []  # Store chat messages
         self.input_queue: queue.Queue = queue.Queue()  # Thread-safe message queue
         self.display_lock = threading.Lock()  # Ensure thread-safe display
+        self.input_line_shown: bool = False  # Track if input line is currently shown
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
@@ -121,20 +149,52 @@ class TermchatClient:
             self.terminal_width = 80
     
     def display_message_in_chat_area(self, message):
-        """Display a message in the chat area (above the input line)"""
+        """Display a message in the chat area (above the input line) with proper terminal positioning"""
         with self.display_lock:
-            # Save cursor position and clear input line
-            print('\r' + ' ' * (self.terminal_width - 1), end='\r')
+            self.update_terminal_size()
             
-            # Display the message
+            # Hide cursor for clean display
+            print(Cursor.HIDE, end='', flush=True)
+            
+            # If input line is shown, clear it first
+            if self.input_line_shown:
+                # Move to bottom line and clear it
+                print(Cursor.move_to_bottom(), end='')
+                print(Cursor.clear_line(), end='', flush=True)
+            
+            # Move cursor up one line from bottom to display the message
+            print(f'\033[{self.terminal_height-1};1H', end='')
+            
+            # Display the message and scroll the terminal
             print(message)
             
-            # Show input prompt again
-            print(f"{Colors.CYAN}Enter message: {Colors.RESET}", end='', flush=True)
+            # Show the input line again at the bottom
+            self.show_input_prompt()
+    
+    def show_input_prompt(self):
+        """Show the input prompt at the bottom of the terminal"""
+        # Move to absolute bottom line
+        print(Cursor.move_to_bottom(), end='')
+        print(Cursor.clear_line(), end='')
+        print(f"{Colors.CYAN}Enter message: {Colors.RESET}", end='', flush=True)
+        
+        # Show cursor for input
+        print(Cursor.SHOW, end='', flush=True)
+        self.input_line_shown = True
+    
+    def hide_input_prompt(self):
+        """Hide the input prompt temporarily"""
+        if self.input_line_shown:
+            print(Cursor.HIDE, end='', flush=True)
+            print(Cursor.move_to_bottom(), end='')
+            print(Cursor.clear_line(), end='', flush=True)
+            self.input_line_shown = False
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
         def signal_handler(signum, frame):
+            # Clean up cursor state
+            print(Cursor.SHOW, end='', flush=True)  # Show cursor
             print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
             self.running = False
             # Immediate exit on Ctrl-C
@@ -266,9 +326,6 @@ class TermchatClient:
             self.display_header_bar()
             self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}[Server]: Connected successfully{Colors.RESET}")
             self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
-            
-            # Start input after successful connection
-            print()  # Add spacing before input starts
         
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
@@ -276,19 +333,21 @@ class TermchatClient:
             self.running = False
     
     def input_thread(self):
-        """Handle user input in a separate thread"""
+        """Handle user input in a separate thread with fixed bottom input"""
         try:
+            # Show initial input prompt
+            self.show_input_prompt()
+            
             while self.running:
                 try:
-                    # Show input prompt
-                    with self.display_lock:
-                        print(f"{Colors.CYAN}Enter message: {Colors.RESET}", end='', flush=True)
-                    
-                    # Get user input
+                    # Get user input (this will be on the bottom line)
                     user_message = input().strip()
                     
                     if not self.running:
                         break
+                    
+                    # Hide the input line after getting input
+                    self.hide_input_prompt()
                     
                     if user_message:
                         if user_message.lower() in ['/quit', '/exit', '/q']:
@@ -298,6 +357,10 @@ class TermchatClient:
                         
                         # Add message to queue for processing
                         self.input_queue.put({"type": "message", "content": user_message})
+                    
+                    # Show input prompt again for next input
+                    if self.running:
+                        self.show_input_prompt()
                 
                 except (KeyboardInterrupt, EOFError):
                     self.running = False
