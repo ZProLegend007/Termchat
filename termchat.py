@@ -7,21 +7,20 @@ Connects to termchat-backend via HTTPS WebSocket on port 443
 import asyncio
 import websockets
 import json
-import signal
 import sys
-import os
-import time
-import threading
 from typing import Optional
+from textual.app import App, ComposeResult
+from textual.containers import Container, Vertical
+from textual.widgets import Input, RichLog, Static, Label
+from textual.binding import Binding
+from rich.markup import escape
 
-# ANSI Color codes - Only GREEN and BLACK as required
-class Colors:
-    RESET = '\033[0m'
-    BOLD = '\033[1m'
-    
-    # Only use GREEN and BLACK colors as required
-    GREEN = '\033[32m'
-    BRIGHT_GREEN = '\033[92m'
+# User colors for cycling through usernames
+USER_COLORS = [
+    "red", "green", "yellow", "magenta", 
+    "cyan", "bright_red", "bright_yellow", 
+    "bright_magenta", "bright_cyan"
+]
 
 # ASCII Art for TERMCHAT
 TERMCHAT_ASCII = """
@@ -32,288 +31,489 @@ TERMCHAT_ASCII = """
    ██    ███████ ██   ██ ██      ██  ██████ ██   ██ ██   ██    ██    
 """
 
-# Global progress animation control
-_progress_running = False
-_progress_thread = None
 
-def clear_terminal():
-    """Clear the terminal screen"""
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-def progress(message):
-    """Start background spinner with frames and green color"""
-    global _progress_running, _progress_thread
+class SplashScreen(App):
+    """ASCII Art splash screen shown for 2 seconds"""
     
-    _progress_running = True
-    frames = ['▱▱▱▱▱▱▱▱▱▱', '▰▱▱▱▱▱▱▱▱▱', '▰▰▱▱▱▱▱▱▱▱', '▰▰▰▱▱▱▱▱▱▱', 
-              '▰▰▰▰▱▱▱▱▱▱', '▰▰▰▰▰▱▱▱▱▱', '▰▰▰▰▰▰▱▱▱▱', '▰▰▰▰▰▰▰▱▱▱',
-              '▰▰▰▰▰▰▰▰▱▱', '▰▰▰▰▰▰▰▰▰▱', '▰▰▰▰▰▰▰▰▰▰']
+    CSS = """
+    Screen {
+        align: center middle;
+        background: black;
+        color: #00ff00;
+    }
     
-    def animate():
-        frame_idx = 0
-        while _progress_running:
-            frame = frames[frame_idx % len(frames)]
-            print(f'\r{Colors.BRIGHT_GREEN}[{frame}] {message}{Colors.RESET}', end='', flush=True)
-            frame_idx += 1
-            time.sleep(0.1)
+    #splash {
+        width: auto;
+        height: auto;
+        content-align: center middle;
+        text-style: bold;
+        color: #00ff00;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Static(TERMCHAT_ASCII, id="splash")
+
+    def on_mount(self):
+        # Auto-exit after 2 seconds
+        self.set_timer(2.0, self.action_quit)
+
+    def action_quit(self):
+        self.exit()
+
+
+class ConnectionDialog(App):
+    """Modal dialog for connection details"""
     
-    _progress_thread = threading.Thread(target=animate, daemon=True)
-    _progress_thread.start()
-
-def end_progress():
-    """Clean up progress animation and restore cursor"""
-    global _progress_running, _progress_thread
+    CSS = """
+    Screen {
+        align: center middle;
+        background: black;
+    }
     
-    _progress_running = False
-    if _progress_thread:
-        _progress_thread.join(timeout=0.2)
-    print('\r' + ' ' * 80, end='\r', flush=True)  # Clear the line
+    #dialog {
+        width: 50;
+        height: 18;
+        border: solid #00ff00;
+        background: black;
+        color: white;
+    }
+    
+    #title {
+        dock: top;
+        width: 100%;
+        content-align: center middle;
+        text-style: bold;
+        color: #00ff00;
+        background: black;
+        padding: 1 0;
+    }
+    
+    #form {
+        layout: vertical;
+        height: auto;
+        margin: 1;
+        padding: 0;
+    }
+    
+    .form-row {
+        height: 3;
+        layout: horizontal;
+        margin-bottom: 1;
+    }
+    
+    .label {
+        width: 12;
+        content-align: right middle;
+        margin-right: 1;
+        color: #cccccc;
+        text-style: bold;
+    }
+    
+    .input {
+        width: 1fr;
+        background: #111111;
+        color: white;
+        border: solid #333333;
+    }
+    
+    .input:focus {
+        border: solid #00ff00;
+        background: #001100;
+    }
+    
+    #buttons {
+        dock: bottom;
+        layout: horizontal;
+        height: 3;
+        align: center middle;
+        background: black;
+        padding: 1 0;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("ctrl+c", "quit", "Quit"),
+        Binding("escape", "quit", "Quit"),
+        Binding("tab", "focus_next", "Next Field"),
+        Binding("shift+tab", "focus_previous", "Previous Field"),
+        Binding("enter", "connect", "Connect"),
+    ]
 
-
-class TermchatClient:
     def __init__(self):
+        super().__init__()
+        self.username = ""
+        self.chat_name = ""
+        self.password = ""
+        self.result = None
+
+    def compose(self) -> ComposeResult:
+        with Container(id="dialog"):
+            yield Label("TERMCHAT Connection", id="title")
+            with Vertical(id="form"):
+                with Container(classes="form-row"):
+                    yield Label("Username:", classes="label")
+                    yield Input(placeholder="Enter username", id="username_input", classes="input")
+                with Container(classes="form-row"):
+                    yield Label("Chat name:", classes="label")
+                    yield Input(placeholder="Enter chat name", id="chatname_input", classes="input")
+                with Container(classes="form-row"):
+                    yield Label("Password:", classes="label")
+                    yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
+            with Container(id="buttons"):
+                yield Static("[bold #00ff00]Tab[/bold #00ff00]: Navigate • [bold #00ff00]Enter[/bold #00ff00]: Connect • [bold #00ff00]Ctrl+C[/bold #00ff00]: Quit")
+
+    def on_mount(self):
+        self.query_one("#username_input").focus()
+    
+    async def on_input_submitted(self, event: Input.Submitted):
+        """Handle Enter key in any input field"""
+        self.action_connect()
+
+    def action_connect(self):
+        username = self.query_one("#username_input").value.strip()
+        chat_name = self.query_one("#chatname_input").value.strip()
+        password = self.query_one("#password_input").value.strip()
+        
+        if not username:
+            self.notify("Username cannot be empty!", severity="error")
+            self.query_one("#username_input").focus()
+            return
+        if username.lower() == "server":
+            self.notify("Username 'server' is forbidden!", severity="error")
+            self.query_one("#username_input").focus()
+            return
+        if not chat_name:
+            self.notify("Chat name cannot be empty!", severity="error")  
+            self.query_one("#chatname_input").focus()
+            return
+        if not password:
+            self.notify("Password cannot be empty!", severity="error")
+            self.query_one("#password_input").focus()
+            return
+        
+        self.result = {
+            "username": username,
+            "chat_name": chat_name,
+            "password": password
+        }
+        self.exit(self.result)
+
+    def action_quit(self):
+        self.exit(None)
+
+
+class TermchatApp(App):
+    """Main Termchat application with proper UI windowing"""
+    
+    CSS = """
+    Screen {
+        layout: vertical;
+        background: black;
+        color: white;
+    }
+    
+    #header {
+        dock: top;
+        height: 3;
+        background: black;
+        color: #00ff00;
+        content-align: center middle;
+        text-style: bold;
+        border-bottom: solid #00ff00;
+        padding: 1 0;
+    }
+    
+    #messages_container {
+        height: 1fr;
+        border: solid #00ff00;
+        margin: 1;
+        background: black;
+    }
+    
+    #messages {
+        height: 1fr;
+        scrollbar-gutter: stable;
+        border: none;
+        background: black;
+        color: white;
+        padding: 1;
+    }
+    
+    #input_container {
+        dock: bottom;
+        height: 4;
+        border: solid #00ff00;
+        margin: 0 1 1 1;
+        background: black;
+    }
+    
+    #input_prompt {
+        dock: left;
+        width: 16;
+        content-align: right middle;
+        color: #00ff00;
+        background: black;
+        text-style: bold;
+        padding-right: 1;
+    }
+    
+    #message_input {
+        width: 1fr;
+        border: none;
+        background: black;
+        color: white;
+        margin: 1;
+    }
+    
+    #message_input:focus {
+        background: #001100;
+        border: solid #333333;
+    }
+    
+    #footer {
+        dock: bottom;
+        height: 2;
+        background: black;
+        color: #666666;
+        content-align: center middle;
+        text-style: italic;
+        border-top: solid #333333;
+        padding: 0;
+    }
+    """
+    
+    BINDINGS = [
+        Binding("ctrl+c", "quit", "Quit"),
+        Binding("ctrl+q", "quit", "Quit"),
+    ]
+
+    def __init__(self, username: str, chat_name: str, password: str):
+        super().__init__()
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
-        self.username: str = ""
-        self.chat_name: str = ""
-        self.password: str = ""
-        self.running: bool = True
-        self.messages: list = []  # Store chat messages
+        self.username = username
+        self.chat_name = chat_name
+        self.password = password
+        self.user_colors: dict = {}  # Maps usernames to colors
+        self.color_index: int = 0    # For cycling through colors
+        self.connected: bool = False
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
-    
-    def display_message_in_chat_area(self, message):
-        """Display a message in the chat area (above the input line)"""
-        # Add message to history
-        self.messages.append(message)
-        
-        # Print the message without clearing the input prompt
-        print(message)
-        
-        # Add spacing before next message
-        print()
-    
-    def setup_signal_handlers(self):
-        """Set up signal handlers for clean exit"""
-        def signal_handler(signum, frame):
-            print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
-            self.running = False
-            # Immediate exit on Ctrl-C
-            os._exit(0)
-        
-        signal.signal(signal.SIGINT, signal_handler)
-        if hasattr(signal, 'SIGTERM'):
-            signal.signal(signal.SIGTERM, signal_handler)
-    
-    def get_user_input(self):
-        """Prompt user for connection details"""
-        try:
-            print(f"{Colors.BRIGHT_GREEN}╔═══════════════════════════════════════╗{Colors.RESET}")
-            print(f"{Colors.BRIGHT_GREEN}║           TERMCHAT LOGIN              ║{Colors.RESET}")
-            print(f"{Colors.BRIGHT_GREEN}╚═══════════════════════════════════════╝{Colors.RESET}")
-            print()
-            
-            self.username = input(f"{Colors.GREEN}Enter username: {Colors.RESET}").strip()
-            if not self.username:
-                print(f"{Colors.GREEN}Username cannot be empty!{Colors.RESET}")
-                return False
-            
-            if self.username.lower() == "server":
-                print(f"{Colors.GREEN}Username 'server' is forbidden!{Colors.RESET}")
-                return False
-            
-            self.chat_name = input(f"{Colors.GREEN}Enter chat name: {Colors.RESET}").strip()
-            if not self.chat_name:
-                print(f"{Colors.GREEN}Chat name cannot be empty!{Colors.RESET}")
-                return False
-            
-            self.password = input(f"{Colors.GREEN}Enter password: {Colors.RESET}").strip()
-            if not self.password:
-                print(f"{Colors.GREEN}Password cannot be empty!{Colors.RESET}")
-                return False
-            
-            return True
-        except (KeyboardInterrupt, EOFError):
-            print(f"\n{Colors.BRIGHT_GREEN}Exiting...{Colors.RESET}")
-            return False
-    
+
+    def compose(self) -> ComposeResult:
+        yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
+        with Container(id="messages_container"):
+            yield RichLog(id="messages", highlight=True, markup=True)
+        with Container(id="input_container"):
+            yield Label("Enter message:", id="input_prompt")
+            yield Input(placeholder="Type your message here...", id="message_input")
+        yield Label("[bold #00ff00]Commands:[/bold #00ff00] /quit, /exit, /q to quit • [bold #00ff00]Ctrl+C[/bold #00ff00] to force quit", id="footer")
+
+    async def on_mount(self):
+        """Initialize the application"""
+        # Connect to server
+        await self.connect_to_server()
+
     async def connect_to_server(self):
         """Establish WebSocket connection to the backend"""
-        try:
-            progress("Connecting to server...")
-            self.websocket = await websockets.connect(
-                self.server_url,
-                ssl=True,  # Enable SSL for HTTPS
-                ping_interval=30,
-                ping_timeout=10
-            )
-            end_progress()
-            clear_terminal()
-            return True
-        except Exception as e:
-            end_progress()
-            print(f"{Colors.GREEN}Failed to connect to server: {e}{Colors.RESET}")
-            return False
-    
-    async def authenticate(self):
-        """Send authentication message to server"""
-        auth_message = {
-            "type": "join",
-            "username": self.username,
-            "chatname": self.chat_name,
-            "password": self.password
-        }
+        messages_log = self.query_one("#messages", RichLog)
         
         try:
+            messages_log.write("[bold #00ff00]Connecting to server...[/bold #00ff00]")
+            
+            # Create SSL context with proper settings
+            import ssl
+            ssl_context = ssl.create_default_context()
+            
+            self.websocket = await websockets.connect(
+                self.server_url,
+                ssl=ssl_context,
+                ping_interval=30,
+                ping_timeout=10,
+                close_timeout=10,
+                max_size=2**20,  # 1MB max message size
+                max_queue=32     # Max queued messages
+            )
+            
+            messages_log.write("[bold #00ff00]Connected to Termchat server![/bold #00ff00]")
+            
+            # Send authentication message
+            auth_message = {
+                "type": "join",
+                "username": self.username,
+                "chatname": self.chat_name,
+                "password": self.password
+            }
+            
+            messages_log.write(f"[bold #cccccc]Authenticating as '{self.username}' in '{self.chat_name}'...[/bold #cccccc]")
             await self.websocket.send(json.dumps(auth_message))
-            return True
+            
+            # Start listening for messages
+            asyncio.create_task(self.listen_for_messages())
+            
+        except websockets.exceptions.InvalidURI:
+            messages_log.write("[bold red]Error: Invalid server URL[/bold red]")
+            self.notify("Invalid server URL", severity="error")
+        except websockets.exceptions.ConnectionClosed:
+            messages_log.write("[bold red]Error: Connection was closed by server[/bold red]") 
+            self.notify("Connection closed by server", severity="error")
+        except OSError as e:
+            messages_log.write(f"[bold red]Network error: {e}[/bold red]")
+            self.notify(f"Network error: {e}", severity="error")
         except Exception as e:
-            print(f"{Colors.GREEN}Authentication failed: {e}{Colors.RESET}")
-            return False
-    
-    def display_header_bar(self):
-        """Display green header bar when connected"""
-        terminal_width = os.get_terminal_size().columns if hasattr(os, 'get_terminal_size') else 80
-        print(f"{Colors.BOLD}{Colors.BRIGHT_GREEN}{'=' * terminal_width}{Colors.RESET}")
-        print()
-    
+            messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
+            self.notify(f"Connection failed: {e}", severity="error")
+
+    def get_user_color(self, username: str) -> str:
+        """Get or assign a color for a username"""
+        if username.lower() == "server":
+            return "bold bright_blue"
+        
+        if username not in self.user_colors:
+            self.user_colors[username] = USER_COLORS[self.color_index % len(USER_COLORS)]
+            self.color_index += 1
+        
+        return self.user_colors[username]
+
     async def listen_for_messages(self):
         """Listen for incoming messages from the server"""
+        messages_log = self.query_one("#messages", RichLog)
+        
         try:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
                     await self.handle_message(data)
                 except json.JSONDecodeError:
-                    # Only show real server messages, no fake output
-                    pass
+                    messages_log.write(f"[bold red]Received invalid JSON: {escape(message[:100])}...[/bold red]")
+                except Exception as e:
+                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red]")
         except websockets.exceptions.ConnectionClosed:
-            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Connection to server lost.{Colors.RESET}")
+            messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
+            self.connected = False
+            self.query_one("#header").update("TERMCHAT - Disconnected")
+            self.notify("Connection lost", severity="warning")
+        except websockets.exceptions.ConnectionClosedError as e:
+            messages_log.write(f"[bold yellow]Connection closed: {e}[/bold yellow]")
+            self.connected = False
+            self.query_one("#header").update("TERMCHAT - Connection Closed")
         except Exception as e:
-            # Only show real server errors
-            pass
-    
+            messages_log.write(f"[bold red]Error receiving messages: {e}[/bold red]")
+            self.connected = False
+
     async def handle_message(self, data):
         """Handle different types of messages from the server"""
+        messages_log = self.query_one("#messages", RichLog)
         message_type = data.get("type", "")
         
         if message_type == "message":
             username = data.get("username", "Unknown")
             message = data.get("content", "")
-            self.display_message_in_chat_area(f"{Colors.GREEN}[{username}]:{Colors.RESET} {message}")
+            user_color = self.get_user_color(username)
+            messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}A wild {username} has appeared.{Colors.RESET}")
+            messages_log.write(f"[bold #00ff00]→ {username} joined the chat[/bold #00ff00]")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
-            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}{username} has left the chat.{Colors.RESET}")
+            messages_log.write(f"[bold #ffff00]← {username} left the chat[/bold #ffff00]")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
-            self.display_message_in_chat_area(f"{Colors.GREEN}Error: {error_message}{Colors.RESET}")
+            messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
         
         elif message_type == "auth_success":
-            # Clear terminal and show header bar after successful authentication
-            clear_terminal()
-            self.display_header_bar()
-            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}[Server]: Connected successfully{Colors.RESET}")
-            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
+            self.connected = True
+            self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
+            messages_log.write("[bold #00ff00]Successfully authenticated![/bold #00ff00]")
+            messages_log.write(f"[bold #00ff00]Welcome to chat '{self.chat_name}'[/bold #00ff00]")
+            # Focus the input field after successful connection
+            self.query_one("#message_input").focus()
         
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
-            print(f"{Colors.GREEN}Authentication failed: {error_message}{Colors.RESET}")
-            self.running = False
-    
-    async def send_user_input(self):
-        """Handle user input for sending messages"""
-        try:
-            while self.running:
-                try:
-                    # Use asyncio to get user input without blocking
-                    user_message = await asyncio.get_event_loop().run_in_executor(
-                        None, input, f"{Colors.GREEN}Enter message: {Colors.RESET}"
-                    )
-                    
-                    if not self.running:
-                        break
-                    
-                    user_message = user_message.strip()
-                    if user_message:
-                        if user_message.lower() in ['/quit', '/exit', '/q']:
-                            print(f"{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
-                            self.running = False
-                            if self.websocket:
-                                await self.websocket.close()
-                            return
-                        
-                        # Send the message without clearing the input line
-                        message_data = {
-                            "type": "message",
-                            "content": user_message
-                        }
-                        
-                        await self.websocket.send(json.dumps(message_data))
-                
-                except (KeyboardInterrupt, EOFError):
-                    print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
-                    self.running = False
-                    if self.websocket:
-                        await self.websocket.close()
-                    return
-                except Exception as e:
-                    if self.running:
-                        # Only show real server errors, no fake messages
-                        pass
+            messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
+            self.notify(f"Authentication failed: {error_message}", severity="error")
+
+    async def on_input_submitted(self, event: Input.Submitted):
+        """Handle user message input"""
+        if event.input.id != "message_input":
+            return
+            
+        user_message = event.value.strip()
+        event.input.clear()
         
-        except Exception as e:
-            # Only show real server errors
-            pass
-    
-    async def run(self):
-        """Main client loop"""
-        self.setup_signal_handlers()
-        
-        # Clear terminal and show ASCII art
-        clear_terminal()
-        print(f"{Colors.BRIGHT_GREEN}{TERMCHAT_ASCII}{Colors.RESET}")
-        print(f"{Colors.GREEN}Cross-platform terminal chat client{Colors.RESET}")
-        print(f"{Colors.GREEN}Commands: /quit, /exit, /q to exit{Colors.RESET}")
-        print()
-        
-        # Get user input
-        if not self.get_user_input():
+        if not user_message:
+            return
+            
+        # Handle quit commands
+        if user_message.lower() in ['/quit', '/exit', '/q']:
+            await self.action_quit()
             return
         
-        # Connect to server
-        if not await self.connect_to_server():
-            return
-        
-        # Authenticate
-        if not await self.authenticate():
-            return
-        
-        try:
-            # Start listening for messages and handling user input concurrently
-            await asyncio.gather(
-                self.listen_for_messages(),
-                self.send_user_input(),
-                return_exceptions=True
-            )
-        except Exception as e:
-            # Only show real server errors
-            pass
-        finally:
-            self.running = False
-            if self.websocket:
+        # Send message to server
+        if self.websocket and self.connected:
+            try:
+                message_data = {
+                    "type": "message",
+                    "content": user_message
+                }
+                await self.websocket.send(json.dumps(message_data))
+            except websockets.exceptions.ConnectionClosed:
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write("[bold red]Cannot send message: Connection closed[/bold red]")
+                self.connected = False
+                self.query_one("#header").update("TERMCHAT - Disconnected")
+            except Exception as e:
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
+        else:
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
+
+    async def action_quit(self):
+        """Quit the application"""
+        if self.websocket:
+            try:
                 await self.websocket.close()
+            except:
+                pass
+        self.exit()
+
+
+async def show_splash_screen():
+    """Show ASCII splash screen for 2 seconds"""
+    splash_app = SplashScreen()
+    await splash_app.run_async()
+
+
+async def get_connection_details() -> Optional[dict]:
+    """Get connection details via a simple dialog"""
+    connection_app = ConnectionDialog()
+    return await connection_app.run_async()
 
 
 async def main():
     """Entry point for the application"""
-    client = TermchatClient()
-    await client.run()
+    # First show splash screen
+    await show_splash_screen()
+    
+    # Then get connection details
+    connection_result = await get_connection_details()
+    
+    if connection_result is None:
+        return
+    
+    # Then start the main chat app
+    app = TermchatApp(
+        username=connection_result["username"],
+        chat_name=connection_result["chat_name"],
+        password=connection_result["password"]
+    )
+    await app.run_async()
 
 
 if __name__ == "__main__":
