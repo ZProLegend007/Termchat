@@ -13,6 +13,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
 from textual.widgets import Input, RichLog, Static, Label
 from textual.binding import Binding
+from textual.screen import Screen
 from rich.markup import escape
 
 # User colors for cycling through usernames
@@ -32,11 +33,11 @@ TERMCHAT_ASCII = """
 """
 
 
-class SplashScreen(App):
+class SplashScreen(Screen):
     """ASCII Art splash screen shown for 2 seconds"""
     
     CSS = """
-    Screen {
+    SplashScreen {
         align: center middle;
         background: black;
         color: #00ff00;
@@ -55,18 +56,18 @@ class SplashScreen(App):
         yield Static(TERMCHAT_ASCII, id="splash")
 
     def on_mount(self):
-        # Auto-exit after 2 seconds
-        self.set_timer(2.0, self.action_quit)
+        # Auto-advance to connection dialog after 2 seconds
+        self.set_timer(2.0, self.show_connection)
 
-    def action_quit(self):
-        self.exit()
+    def show_connection(self):
+        self.app.push_screen("connection")
 
 
-class ConnectionDialog(App):
-    """Modal dialog for connection details"""
+class ConnectionScreen(Screen):
+    """Modal screen for connection details"""
     
     CSS = """
-    Screen {
+    ConnectionScreen {
         align: center middle;
         background: black;
     }
@@ -141,13 +142,6 @@ class ConnectionDialog(App):
         Binding("enter", "connect", "Connect"),
     ]
 
-    def __init__(self):
-        super().__init__()
-        self.username = ""
-        self.chat_name = ""
-        self.password = ""
-        self.result = None
-
     def compose(self) -> ComposeResult:
         with Container(id="dialog"):
             yield Label("TERMCHAT Connection", id="title")
@@ -177,38 +171,36 @@ class ConnectionDialog(App):
         password = self.query_one("#password_input").value.strip()
         
         if not username:
-            self.notify("Username cannot be empty!", severity="error")
+            self.app.notify("Username cannot be empty!", severity="error")
             self.query_one("#username_input").focus()
             return
         if username.lower() == "server":
-            self.notify("Username 'server' is forbidden!", severity="error")
+            self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
             return
         if not chat_name:
-            self.notify("Chat name cannot be empty!", severity="error")  
+            self.app.notify("Chat name cannot be empty!", severity="error")  
             self.query_one("#chatname_input").focus()
             return
         if not password:
-            self.notify("Password cannot be empty!", severity="error")
+            self.app.notify("Password cannot be empty!", severity="error")
             self.query_one("#password_input").focus()
             return
         
-        self.result = {
-            "username": username,
-            "chat_name": chat_name,
-            "password": password
-        }
-        self.exit(self.result)
+        # Start the chat with these credentials
+        self.app.start_chat(username, chat_name, password)
 
     def action_quit(self):
-        self.exit(None)
+        self.app.exit()
 
 
-class TermchatApp(App):
-    """Main Termchat application with proper UI windowing"""
+class ChatScreen(Screen):
+    """Main chat screen"""
+class ChatScreen(Screen):
+    """Main chat screen"""
     
     CSS = """
-    Screen {
+    ChatScreen {
         layout: vertical;
         background: black;
         color: white;
@@ -291,16 +283,9 @@ class TermchatApp(App):
 
     def __init__(self, username: str, chat_name: str, password: str):
         super().__init__()
-        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.username = username
         self.chat_name = chat_name
         self.password = password
-        self.user_colors: dict = {}  # Maps usernames to colors
-        self.color_index: int = 0    # For cycling through colors
-        self.connected: bool = False
-        
-        # Backend server URL (HTTPS WebSocket on port 443)
-        self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
 
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
@@ -312,11 +297,61 @@ class TermchatApp(App):
         yield Label("[bold #00ff00]Commands:[/bold #00ff00] /quit, /exit, /q to quit • [bold #00ff00]Ctrl+C[/bold #00ff00] to force quit", id="footer")
 
     async def on_mount(self):
-        """Initialize the application"""
-        # Connect to server
-        await self.connect_to_server()
+        """Initialize the chat screen"""
+        # Start connection to server
+        await self.app.connect_to_server(self.username, self.chat_name, self.password)
 
-    async def connect_to_server(self):
+    async def on_input_submitted(self, event: Input.Submitted):
+        """Handle user message input"""
+        if event.input.id != "message_input":
+            return
+            
+        user_message = event.value.strip()
+        event.input.clear()
+        
+        if not user_message:
+            return
+            
+        # Handle quit commands
+        if user_message.lower() in ['/quit', '/exit', '/q']:
+            await self.app.action_quit()
+            return
+        
+        # Send message to server
+        await self.app.send_message(user_message)
+
+    def action_quit(self):
+        self.app.action_quit()
+
+
+class TermchatApp(App):
+    """Main Termchat application using proper screen management"""
+
+    SCREENS = {
+        "splash": SplashScreen,
+        "connection": ConnectionScreen,
+    }
+    
+    def __init__(self):
+        super().__init__()
+        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
+        self.user_colors: dict = {}  # Maps usernames to colors
+        self.color_index: int = 0    # For cycling through colors
+        self.connected: bool = False
+        
+        # Backend server URL (HTTPS WebSocket on port 443)
+        self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
+
+    def on_mount(self):
+        """Start with the splash screen"""
+        self.push_screen("splash")
+
+    def start_chat(self, username: str, chat_name: str, password: str):
+        """Start the chat with the given credentials"""
+        chat_screen = ChatScreen(username, chat_name, password)
+        self.push_screen(chat_screen)
+
+    async def connect_to_server(self, username: str, chat_name: str, password: str):
         """Establish WebSocket connection to the backend"""
         messages_log = self.query_one("#messages", RichLog)
         
@@ -338,9 +373,9 @@ class TermchatApp(App):
             # Send authentication message
             auth_message = {
                 "type": "join",
-                "username": self.username,
-                "chatname": self.chat_name,
-                "password": self.password
+                "username": username,
+                "chatname": chat_name,
+                "password": password
             }
             
             await self.websocket.send(json.dumps(auth_message))
@@ -423,9 +458,10 @@ class TermchatApp(App):
         
         elif message_type == "auth_success":
             self.connected = True
-            self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
+            chat_name = self.screen.chat_name if hasattr(self.screen, 'chat_name') else "Unknown"
+            self.query_one("#header").update(f"TERMCHAT - Connected to '{chat_name}'")
             messages_log.write("[bold bright_blue][Server]:[/bold bright_blue] Connected successfully")
-            messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
+            messages_log.write(f"[bold #00ff00]Successfully joined chat '{chat_name}'[/bold #00ff00]")
             # Focus the input field after successful connection
             self.query_one("#message_input").focus()
         
@@ -434,23 +470,8 @@ class TermchatApp(App):
             messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
             self.notify(f"Authentication failed: {error_message}", severity="error")
 
-    async def on_input_submitted(self, event: Input.Submitted):
-        """Handle user message input"""
-        if event.input.id != "message_input":
-            return
-            
-        user_message = event.value.strip()
-        event.input.clear()
-        
-        if not user_message:
-            return
-            
-        # Handle quit commands
-        if user_message.lower() in ['/quit', '/exit', '/q']:
-            await self.action_quit()
-            return
-        
-        # Send message to server
+    async def send_message(self, user_message: str):
+        """Send message to server"""
         if self.websocket and self.connected:
             try:
                 message_data = {
@@ -480,35 +501,9 @@ class TermchatApp(App):
         self.exit()
 
 
-async def show_splash_screen():
-    """Show ASCII splash screen for 2 seconds"""
-    splash_app = SplashScreen()
-    await splash_app.run_async()
-
-
-async def get_connection_details() -> Optional[dict]:
-    """Get connection details via a simple dialog"""
-    connection_app = ConnectionDialog()
-    return await connection_app.run_async()
-
-
 async def main():
     """Entry point for the application"""
-    # First show splash screen
-    await show_splash_screen()
-    
-    # Then get connection details
-    connection_result = await get_connection_details()
-    
-    if connection_result is None:
-        return
-    
-    # Then start the main chat app
-    app = TermchatApp(
-        username=connection_result["username"],
-        chat_name=connection_result["chat_name"],
-        password=connection_result["password"]
-    )
+    app = TermchatApp()
     await app.run_async()
 
 
