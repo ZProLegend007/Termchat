@@ -10,7 +10,85 @@ import json
 import signal
 import sys
 import os
+import time
+import threading
 from typing import Optional
+
+# ANSI Color codes
+class Colors:
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    
+    # Regular colors
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
+    
+    # Bright colors
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_BLUE = '\033[94m'
+    BRIGHT_MAGENTA = '\033[95m'
+    BRIGHT_CYAN = '\033[96m'
+    BRIGHT_WHITE = '\033[97m'
+
+# ASCII Art for TERMCHAT
+TERMCHAT_ASCII = """
+████████ ███████ ██████  ███    ███  ██████ ██   ██  █████  ████████ 
+   ██    ██      ██   ██ ████  ████ ██      ██   ██ ██   ██    ██    
+   ██    █████   ██████  ██ ████ ██ ██      ███████ ███████    ██    
+   ██    ██      ██   ██ ██  ██  ██ ██      ██   ██ ██   ██    ██    
+   ██    ███████ ██   ██ ██      ██  ██████ ██   ██ ██   ██    ██    
+"""
+
+# User colors for cycling
+USER_COLORS = [
+    Colors.RED, Colors.GREEN, Colors.YELLOW, Colors.MAGENTA, 
+    Colors.CYAN, Colors.BRIGHT_RED, Colors.BRIGHT_YELLOW, 
+    Colors.BRIGHT_MAGENTA, Colors.BRIGHT_CYAN
+]
+
+# Global progress animation control
+_progress_running = False
+_progress_thread = None
+
+def clear_terminal():
+    """Clear the terminal screen"""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def progress(message):
+    """Start background spinner with frames and bright blue color"""
+    global _progress_running, _progress_thread
+    
+    _progress_running = True
+    frames = ['▱▱▱▱▱▱▱▱▱▱', '▰▱▱▱▱▱▱▱▱▱', '▰▰▱▱▱▱▱▱▱▱', '▰▰▰▱▱▱▱▱▱▱', 
+              '▰▰▰▰▱▱▱▱▱▱', '▰▰▰▰▰▱▱▱▱▱', '▰▰▰▰▰▰▱▱▱▱', '▰▰▰▰▰▰▰▱▱▱',
+              '▰▰▰▰▰▰▰▰▱▱', '▰▰▰▰▰▰▰▰▰▱', '▰▰▰▰▰▰▰▰▰▰']
+    
+    def animate():
+        frame_idx = 0
+        while _progress_running:
+            frame = frames[frame_idx % len(frames)]
+            print(f'\r{Colors.BRIGHT_BLUE}[{frame}] {message}{Colors.RESET}', end='', flush=True)
+            frame_idx += 1
+            time.sleep(0.1)
+    
+    _progress_thread = threading.Thread(target=animate, daemon=True)
+    _progress_thread.start()
+
+def end_progress():
+    """Clean up progress animation and restore cursor"""
+    global _progress_running, _progress_thread
+    
+    _progress_running = False
+    if _progress_thread:
+        _progress_thread.join(timeout=0.2)
+    print('\r' + ' ' * 80, end='\r', flush=True)  # Clear the line
 
 
 class TermchatClient:
@@ -20,6 +98,8 @@ class TermchatClient:
         self.chat_name: str = ""
         self.password: str = ""
         self.running: bool = True
+        self.user_colors: dict = {}  # Maps usernames to colors
+        self.color_index: int = 0    # For cycling through colors
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
@@ -27,50 +107,67 @@ class TermchatClient:
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
         def signal_handler(signum, frame):
-            print("\nExiting Termchat...")
+            print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
             self.running = False
         
         signal.signal(signal.SIGINT, signal_handler)
         if hasattr(signal, 'SIGTERM'):
             signal.signal(signal.SIGTERM, signal_handler)
     
+    def get_user_color(self, username: str) -> str:
+        """Get or assign a color for a username"""
+        if username == "server":
+            return f"{Colors.BOLD}{Colors.BRIGHT_BLUE}"
+        
+        if username not in self.user_colors:
+            self.user_colors[username] = USER_COLORS[self.color_index % len(USER_COLORS)]
+            self.color_index += 1
+        
+        return self.user_colors[username]
+    
     def get_user_input(self):
         """Prompt user for connection details"""
         try:
             self.username = input("Enter username: ").strip()
             if not self.username:
-                print("Username cannot be empty!")
+                print(f"{Colors.RED}Username cannot be empty!{Colors.RESET}")
+                return False
+            
+            if self.username.lower() == "server":
+                print(f"{Colors.RED}Username 'server' is forbidden!{Colors.RESET}")
                 return False
             
             self.chat_name = input("Enter chat name: ").strip()
             if not self.chat_name:
-                print("Chat name cannot be empty!")
+                print(f"{Colors.RED}Chat name cannot be empty!{Colors.RESET}")
                 return False
             
             self.password = input("Enter password: ").strip()
             if not self.password:
-                print("Password cannot be empty!")
+                print(f"{Colors.RED}Password cannot be empty!{Colors.RESET}")
                 return False
             
             return True
         except (KeyboardInterrupt, EOFError):
-            print("\nExiting...")
+            print(f"\n{Colors.BRIGHT_GREEN}Exiting...{Colors.RESET}")
             return False
     
     async def connect_to_server(self):
         """Establish WebSocket connection to the backend"""
         try:
-            print(f"Connecting to {self.server_url}...")
+            progress("Connecting...")
             self.websocket = await websockets.connect(
                 self.server_url,
                 ssl=True,  # Enable SSL for HTTPS
                 ping_interval=30,
                 ping_timeout=10
             )
-            print("Connected to Termchat server!")
+            end_progress()
+            print(f"{Colors.BRIGHT_GREEN}Connected to Termchat server!{Colors.RESET}")
             return True
         except Exception as e:
-            print(f"Failed to connect to server: {e}")
+            end_progress()
+            print(f"{Colors.RED}Failed to connect to server: {e}{Colors.RESET}")
             return False
     
     async def authenticate(self):
@@ -86,8 +183,18 @@ class TermchatClient:
             await self.websocket.send(json.dumps(auth_message))
             return True
         except Exception as e:
-            print(f"Authentication failed: {e}")
+            print(f"{Colors.RED}Authentication failed: {e}{Colors.RESET}")
             return False
+    
+    def display_header_bar(self):
+        """Display blue header bar when connected"""
+        terminal_width = os.get_terminal_size().columns if hasattr(os, 'get_terminal_size') else 80
+        header = f"TERMCHAT - Chat: {self.chat_name} - User: {self.username}"
+        padding = max(0, terminal_width - len(header))
+        padded_header = header + " " * padding
+        print(f"{Colors.BOLD}{Colors.BRIGHT_BLUE}{padded_header}{Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.BRIGHT_BLUE}{'=' * terminal_width}{Colors.RESET}")
+        print()
     
     async def listen_for_messages(self):
         """Listen for incoming messages from the server"""
@@ -97,11 +204,11 @@ class TermchatClient:
                     data = json.loads(message)
                     await self.handle_message(data)
                 except json.JSONDecodeError:
-                    print(f"Received invalid message: {message}")
+                    print(f"{Colors.RED}Received invalid message: {message}{Colors.RESET}")
         except websockets.exceptions.ConnectionClosed:
-            print("Connection to server lost.")
+            print(f"{Colors.BRIGHT_GREEN}Connection to server lost.{Colors.RESET}")
         except Exception as e:
-            print(f"Error receiving messages: {e}")
+            print(f"{Colors.RED}Error receiving messages: {e}{Colors.RESET}")
     
     async def handle_message(self, data):
         """Handle different types of messages from the server"""
@@ -110,26 +217,30 @@ class TermchatClient:
         if message_type == "message":
             username = data.get("username", "Unknown")
             message = data.get("content", "")
-            print(f"[{username}]: {message}")
+            user_color = self.get_user_color(username)
+            print(f"{user_color}[{username}]:{Colors.RESET} {message}")
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            print(f"A wild {username} has appeared.")
+            print(f"{Colors.BRIGHT_GREEN}A wild {username} has appeared.{Colors.RESET}")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
-            print(f"{username} has left the chat.")
+            print(f"{Colors.BRIGHT_GREEN}{username} has left the chat.{Colors.RESET}")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
-            print(f"Error: {error_message}")
+            print(f"{Colors.RED}Error: {error_message}{Colors.RESET}")
         
         elif message_type == "auth_success":
-            print(f"Successfully joined chat '{self.chat_name}'")
+            print(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
+            # Clear terminal and show header bar after successful authentication
+            clear_terminal()
+            self.display_header_bar()
         
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
-            print(f"Authentication failed: {error_message}")
+            print(f"{Colors.RED}Authentication failed: {error_message}{Colors.RESET}")
             self.running = False
     
     async def send_user_input(self):
@@ -139,7 +250,7 @@ class TermchatClient:
                 try:
                     # Use asyncio to get user input without blocking
                     user_message = await asyncio.get_event_loop().run_in_executor(
-                        None, input, ""
+                        None, input, f"{Colors.CYAN}Enter message: {Colors.RESET}"
                     )
                     
                     if not self.running:
@@ -157,24 +268,28 @@ class TermchatClient:
                         }
                         
                         await self.websocket.send(json.dumps(message_data))
+                        # Clear the input line after sending (message will appear when echoed back)
+                        print(f"\033[A\033[K", end="")  # Move up and clear line
                 
                 except (KeyboardInterrupt, EOFError):
                     self.running = False
                     break
                 except Exception as e:
                     if self.running:
-                        print(f"Error sending message: {e}")
+                        print(f"{Colors.RED}Error sending message: {e}{Colors.RESET}")
         
         except Exception as e:
-            print(f"Input handling error: {e}")
+            print(f"{Colors.RED}Input handling error: {e}{Colors.RESET}")
     
     async def run(self):
         """Main client loop"""
         self.setup_signal_handlers()
         
-        print("=== Termchat Client ===")
-        print("Cross-platform terminal chat client")
-        print("Commands: /quit, /exit, /q to exit")
+        # Clear terminal and show ASCII art
+        clear_terminal()
+        print(f"{Colors.BRIGHT_BLUE}{TERMCHAT_ASCII}{Colors.RESET}")
+        print(f"{Colors.BRIGHT_WHITE}Cross-platform terminal chat client{Colors.RESET}")
+        print(f"{Colors.YELLOW}Commands: /quit, /exit, /q to exit{Colors.RESET}")
         print()
         
         # Get user input
@@ -196,11 +311,11 @@ class TermchatClient:
                 self.send_user_input()
             )
         except Exception as e:
-            print(f"Runtime error: {e}")
+            print(f"{Colors.RED}Runtime error: {e}{Colors.RESET}")
         finally:
             if self.websocket:
                 await self.websocket.close()
-            print("Disconnected from Termchat server.")
+            print(f"{Colors.BRIGHT_GREEN}Disconnected from Termchat server.{Colors.RESET}")
 
 
 async def main():
