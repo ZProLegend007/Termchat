@@ -296,16 +296,23 @@ class TermchatApp(App):
         messages_log = self.query_one("#messages", RichLog)
         
         try:
-            messages_log.write("[bold blue]Connecting to server...[/bold blue]")
+            messages_log.write("[bold #00ff00]Connecting to server...[/bold #00ff00]")
+            
+            # Create SSL context with proper settings
+            import ssl
+            ssl_context = ssl.create_default_context()
             
             self.websocket = await websockets.connect(
                 self.server_url,
-                ssl=True,  # Enable SSL for HTTPS
+                ssl=ssl_context,
                 ping_interval=30,
-                ping_timeout=10
+                ping_timeout=10,
+                close_timeout=10,
+                max_size=2**20,  # 1MB max message size
+                max_queue=32     # Max queued messages
             )
             
-            messages_log.write("[bold green]Connected to Termchat server![/bold green]")
+            messages_log.write("[bold #00ff00]Connected to Termchat server![/bold #00ff00]")
             
             # Send authentication message
             auth_message = {
@@ -315,11 +322,21 @@ class TermchatApp(App):
                 "password": self.password
             }
             
+            messages_log.write(f"[bold #cccccc]Authenticating as '{self.username}' in '{self.chat_name}'...[/bold #cccccc]")
             await self.websocket.send(json.dumps(auth_message))
             
             # Start listening for messages
             asyncio.create_task(self.listen_for_messages())
             
+        except websockets.exceptions.InvalidURI:
+            messages_log.write("[bold red]Error: Invalid server URL[/bold red]")
+            self.notify("Invalid server URL", severity="error")
+        except websockets.exceptions.ConnectionClosed:
+            messages_log.write("[bold red]Error: Connection was closed by server[/bold red]") 
+            self.notify("Connection closed by server", severity="error")
+        except OSError as e:
+            messages_log.write(f"[bold red]Network error: {e}[/bold red]")
+            self.notify(f"Network error: {e}", severity="error")
         except Exception as e:
             messages_log.write(f"[bold red]Failed to connect to server: {e}[/bold red]")
             self.notify(f"Connection failed: {e}", severity="error")
@@ -345,13 +362,21 @@ class TermchatApp(App):
                     data = json.loads(message)
                     await self.handle_message(data)
                 except json.JSONDecodeError:
-                    messages_log.write(f"[bold red]Received invalid message: {escape(message)}[/bold red]")
+                    messages_log.write(f"[bold red]Received invalid JSON: {escape(message[:100])}...[/bold red]")
+                except Exception as e:
+                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red]")
         except websockets.exceptions.ConnectionClosed:
             messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
             self.connected = False
             self.query_one("#header").update("TERMCHAT - Disconnected")
+            self.notify("Connection lost", severity="warning")
+        except websockets.exceptions.ConnectionClosedError as e:
+            messages_log.write(f"[bold yellow]Connection closed: {e}[/bold yellow]")
+            self.connected = False
+            self.query_one("#header").update("TERMCHAT - Connection Closed")
         except Exception as e:
             messages_log.write(f"[bold red]Error receiving messages: {e}[/bold red]")
+            self.connected = False
 
     async def handle_message(self, data):
         """Handle different types of messages from the server"""
@@ -366,11 +391,11 @@ class TermchatApp(App):
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            messages_log.write(f"[bold green]A wild {username} has appeared.[/bold green]")
+            messages_log.write(f"[bold #00ff00]→ {username} joined the chat[/bold #00ff00]")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
-            messages_log.write(f"[bold green]{username} has left the chat.[/bold green]")
+            messages_log.write(f"[bold #ffff00]← {username} left the chat[/bold #ffff00]")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
@@ -379,8 +404,8 @@ class TermchatApp(App):
         elif message_type == "auth_success":
             self.connected = True
             self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
-            messages_log.write("[bold green][Server]: Connected successfully[/bold green]")
-            messages_log.write(f"[bold green]Successfully joined chat '{self.chat_name}'[/bold green]")
+            messages_log.write("[bold #00ff00]Successfully authenticated![/bold #00ff00]")
+            messages_log.write(f"[bold #00ff00]Welcome to chat '{self.chat_name}'[/bold #00ff00]")
             # Focus the input field after successful connection
             self.query_one("#message_input").focus()
         
@@ -413,9 +438,20 @@ class TermchatApp(App):
                     "content": user_message
                 }
                 await self.websocket.send(json.dumps(message_data))
+                # Show the message being sent for immediate feedback
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write(f"[dim #888888]Sending: {escape(user_message)}[/dim #888888]")
+            except websockets.exceptions.ConnectionClosed:
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write("[bold red]Cannot send message: Connection closed[/bold red]")
+                self.connected = False
+                self.query_one("#header").update("TERMCHAT - Disconnected")
             except Exception as e:
                 messages_log = self.query_one("#messages", RichLog)
                 messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
+        else:
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
     async def action_quit(self):
         """Quit the application"""
