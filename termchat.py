@@ -123,14 +123,12 @@ class TermchatClient:
     
     def display_message_in_chat_area(self, message):
         """Display a message in the chat area (above the input line)"""
-        # Save current cursor position
-        print("\033[s", end="")
-        # Move to second-to-last line
-        print(f"\033[{self.terminal_height-1};1H", end="")
-        # Insert a new line and scroll up content
-        print(f"\033[L{message}", end="")
-        # Restore cursor position (input area)
-        print("\033[u", end="", flush=True)
+        # Clear the input line first
+        print(f"\033[{self.terminal_height};1H\033[K", end="")
+        # Move to second-to-last line and insert new message
+        print(f"\033[{self.terminal_height-1};1H\033[L{message}", end="")
+        # Move cursor back to the bottom (input line) and clear it
+        print(f"\033[{self.terminal_height};1H\033[K", end="", flush=True)
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
@@ -257,11 +255,11 @@ class TermchatClient:
             self.display_message_in_chat_area(f"{Colors.RED}Error: {error_message}{Colors.RESET}")
         
         elif message_type == "auth_success":
-            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
             # Clear terminal and show header bar after successful authentication
             clear_terminal()
             self.update_terminal_size()
             self.display_header_bar()
+            self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
         
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
