@@ -72,8 +72,8 @@ class ConnectionDialog(App):
     }
     
     #dialog {
-        width: 50;
-        height: 18;
+        width: 60;
+        height: 20;
         border: solid #00ff00;
         background: black;
         color: white;
@@ -93,13 +93,14 @@ class ConnectionDialog(App):
         layout: vertical;
         height: auto;
         margin: 1;
-        padding: 0;
+        padding: 1;
     }
     
     .form-row {
-        height: 3;
+        height: 4;
         layout: horizontal;
         margin-bottom: 1;
+        margin-top: 1;
     }
     
     .label {
@@ -320,8 +321,6 @@ class TermchatApp(App):
         messages_log = self.query_one("#messages", RichLog)
         
         try:
-            messages_log.write("[bold #00ff00]Connecting to server...[/bold #00ff00]")
-            
             # Create SSL context with proper settings
             import ssl
             ssl_context = ssl.create_default_context()
@@ -336,8 +335,6 @@ class TermchatApp(App):
                 max_queue=32     # Max queued messages
             )
             
-            messages_log.write("[bold #00ff00]Connected to Termchat server![/bold #00ff00]")
-            
             # Send authentication message
             auth_message = {
                 "type": "join",
@@ -346,7 +343,6 @@ class TermchatApp(App):
                 "password": self.password
             }
             
-            messages_log.write(f"[bold #cccccc]Authenticating as '{self.username}' in '{self.chat_name}'...[/bold #cccccc]")
             await self.websocket.send(json.dumps(auth_message))
             
             # Start listening for messages
@@ -415,11 +411,11 @@ class TermchatApp(App):
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            messages_log.write(f"[bold #00ff00]→ {username} joined the chat[/bold #00ff00]")
+            messages_log.write(f"[bold #00ff00]A wild {username} has appeared.[/bold #00ff00]")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
-            messages_log.write(f"[bold #ffff00]← {username} left the chat[/bold #ffff00]")
+            messages_log.write(f"[bold #00ff00]{username} has left the chat.[/bold #00ff00]")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
@@ -428,8 +424,8 @@ class TermchatApp(App):
         elif message_type == "auth_success":
             self.connected = True
             self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
-            messages_log.write("[bold #00ff00]Successfully authenticated![/bold #00ff00]")
-            messages_log.write(f"[bold #00ff00]Welcome to chat '{self.chat_name}'[/bold #00ff00]")
+            messages_log.write("[bold bright_blue][Server]:[/bold bright_blue] Connected successfully")
+            messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
             # Focus the input field after successful connection
             self.query_one("#message_input").focus()
         
