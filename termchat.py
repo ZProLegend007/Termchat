@@ -12,6 +12,7 @@ import sys
 import os
 import time
 import threading
+import queue
 from typing import Optional
 
 # ANSI Color codes
@@ -103,6 +104,8 @@ class TermchatClient:
         self.terminal_height: int = 24  # Default height, will be updated
         self.terminal_width: int = 80   # Default width, will be updated
         self.messages: list = []  # Store chat messages
+        self.input_queue: queue.Queue = queue.Queue()  # Thread-safe message queue
+        self.display_lock = threading.Lock()  # Ensure thread-safe display
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
@@ -119,14 +122,15 @@ class TermchatClient:
     
     def display_message_in_chat_area(self, message):
         """Display a message in the chat area (above the input line)"""
-        # Add message to history
-        self.messages.append(message)
-        
-        # Print the message without clearing the input prompt
-        print(message)
-        
-        # Add spacing before next message
-        print()
+        with self.display_lock:
+            # Save cursor position and clear input line
+            print('\r' + ' ' * (self.terminal_width - 1), end='\r')
+            
+            # Display the message
+            print(message)
+            
+            # Show input prompt again
+            print(f"{Colors.CYAN}Enter message: {Colors.RESET}", end='', flush=True)
     
     def setup_signal_handlers(self):
         """Set up signal handlers for clean exit"""
@@ -262,54 +266,91 @@ class TermchatClient:
             self.display_header_bar()
             self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}[Server]: Connected successfully{Colors.RESET}")
             self.display_message_in_chat_area(f"{Colors.BRIGHT_GREEN}Successfully joined chat '{self.chat_name}'{Colors.RESET}")
+            
+            # Start input after successful connection
+            print()  # Add spacing before input starts
         
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
             print(f"{Colors.RED}Authentication failed: {error_message}{Colors.RESET}")
             self.running = False
     
-    async def send_user_input(self):
-        """Handle user input for sending messages"""
+    def input_thread(self):
+        """Handle user input in a separate thread"""
         try:
             while self.running:
                 try:
-                    # Use asyncio to get user input without blocking
-                    user_message = await asyncio.get_event_loop().run_in_executor(
-                        None, input, f"{Colors.CYAN}Enter message: {Colors.RESET}"
-                    )
+                    # Show input prompt
+                    with self.display_lock:
+                        print(f"{Colors.CYAN}Enter message: {Colors.RESET}", end='', flush=True)
+                    
+                    # Get user input
+                    user_message = input().strip()
                     
                     if not self.running:
                         break
                     
-                    user_message = user_message.strip()
                     if user_message:
                         if user_message.lower() in ['/quit', '/exit', '/q']:
-                            print(f"{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
                             self.running = False
-                            if self.websocket:
-                                await self.websocket.close()
-                            return
+                            self.input_queue.put({"type": "quit"})
+                            break
                         
-                        # Send the message without clearing the input line
-                        message_data = {
-                            "type": "message",
-                            "content": user_message
-                        }
-                        
-                        await self.websocket.send(json.dumps(message_data))
+                        # Add message to queue for processing
+                        self.input_queue.put({"type": "message", "content": user_message})
                 
                 except (KeyboardInterrupt, EOFError):
-                    print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
                     self.running = False
-                    if self.websocket:
-                        await self.websocket.close()
-                    return
+                    self.input_queue.put({"type": "quit"})
+                    break
                 except Exception as e:
                     if self.running:
-                        self.display_message_in_chat_area(f"{Colors.RED}Error sending message: {e}{Colors.RESET}")
+                        print(f"{Colors.RED}Input error: {e}{Colors.RESET}")
         
         except Exception as e:
-            self.display_message_in_chat_area(f"{Colors.RED}Input handling error: {e}{Colors.RESET}")
+            print(f"{Colors.RED}Input thread error: {e}{Colors.RESET}")
+    
+    async def process_user_input(self):
+        """Process user input from the queue"""
+        try:
+            while self.running:
+                try:
+                    # Check for user input (non-blocking)
+                    try:
+                        input_data = self.input_queue.get_nowait()
+                    except queue.Empty:
+                        await asyncio.sleep(0.1)  # Brief pause to prevent busy waiting
+                        continue
+                    
+                    if input_data["type"] == "quit":
+                        print(f"\n{Colors.BRIGHT_GREEN}Exiting Termchat...{Colors.RESET}")
+                        self.running = False
+                        if self.websocket:
+                            await self.websocket.close()
+                        return
+                    
+                    elif input_data["type"] == "message":
+                        message_data = {
+                            "type": "message",
+                            "content": input_data["content"]
+                        }
+                        await self.websocket.send(json.dumps(message_data))
+                
+                except Exception as e:
+                    if self.running:
+                        self.display_message_in_chat_area(f"{Colors.RED}Error processing input: {e}{Colors.RESET}")
+        
+        except Exception as e:
+            self.display_message_in_chat_area(f"{Colors.RED}Input processing error: {e}{Colors.RESET}")
+    
+    async def send_user_input(self):
+        """Start input thread and process input queue"""
+        # Start the input thread
+        input_thread = threading.Thread(target=self.input_thread, daemon=True)
+        input_thread.start()
+        
+        # Process input from the queue
+        await self.process_user_input()
     
     async def run(self):
         """Main client loop"""
