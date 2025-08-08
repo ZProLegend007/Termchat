@@ -312,7 +312,6 @@ class ChatScreen(Screen):
         color: #87CEEB;
         content-align: center middle;
         text-style: bold;
-        border-bottom: solid #87CEEB;
         padding: 1 0;
     }
     
@@ -337,6 +336,7 @@ class ChatScreen(Screen):
         border: solid #87CEEB;
         margin: 0 0 1 0;
         padding: 1;
+        content-align: center middle;
     }
     
     #message_input {
@@ -348,7 +348,7 @@ class ChatScreen(Screen):
     }
     
     #message_input:focus {
-        border: solid #333333;
+        border: none;
     }
     """
     
@@ -522,7 +522,7 @@ class ChatScreen(Screen):
             username = data.get("username", "Unknown")
             message = data.get("content", "")
             
-            # Display messages with proper formatting
+            # Display messages with proper formatting - show ALL messages including own
             if username == "Server":
                 messages_log.write(f"[bold #87CEEB][Server]:[/bold #87CEEB] {escape(message)}")
             else:
@@ -531,13 +531,14 @@ class ChatScreen(Screen):
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            # Handle other users joining (our own join is handled in connect_to_server)
+            # Handle other users joining - server doesn't send join notifications back to joining user
             if username and username != self.username:
                 messages_log.write(f"[bold #87CEEB]A wild {username} has appeared.[/bold #87CEEB]")
         
         elif message_type == "leave":
-            username = data.get("username", "Unknown")
-            if username:
+            username = data.get("username", "Unknown") 
+            # Show leave notifications for all users
+            if username and username != self.username:
                 messages_log.write(f"[bold #87CEEB]{username} has left the chat.[/bold #87CEEB]")
         
         elif message_type == "error":
