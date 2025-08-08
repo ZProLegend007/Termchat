@@ -354,7 +354,7 @@ class ChatScreen(Screen):
         hex_color = f"#{random.randint(0, 0xFFFFFF):06x}"
         
         # Change the user's color in the app's color mapping
-        self.app.user_colors[self.username] = f"#{hex_color[1:]}"  # Remove # for textual color format
+        self.app.user_colors[self.username] = hex_color  # Use full hex format for textual
         
         # Send colourshift response back to frontend (show what's being sent for integration)
         colourshift_response = {
