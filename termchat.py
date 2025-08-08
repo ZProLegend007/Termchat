@@ -378,7 +378,7 @@ class ChatScreen(Screen):
                             messages_log.write(f"[bold #87CEEB][Server]:[/bold #87CEEB] {escape(message)}")
                         else:
                             user_color = self.app.get_user_color(username)
-                            messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
+                            messages_log.write(f"[{user_color}][{escape(username)}]:[/{user_color}] {escape(message)}")
                     elif data.get("type") == "error":
                         error_message = data.get("message", "Connection failed")
                         raise Exception(error_message)
@@ -456,19 +456,19 @@ class ChatScreen(Screen):
                 messages_log.write(f"[bold #87CEEB][Server]:[/bold #87CEEB] {escape(message)}")
             else:
                 user_color = self.app.get_user_color(username)
-                messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
+                messages_log.write(f"[{user_color}][{escape(username)}]:[/{user_color}] {escape(message)}")
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
             # Handle other users joining - server doesn't send join notifications back to joining user
             if username and username != self.username:
-                messages_log.write(f"[bold #87CEEB]A wild {username} has appeared.[/bold #87CEEB]")
+                messages_log.write(f"[bold #87CEEB]A wild {escape(username)} has appeared.[/bold #87CEEB]")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown") 
             # Show leave notifications for all users
             if username and username != self.username:
-                messages_log.write(f"[bold #87CEEB]{username} has left the chat.[/bold #87CEEB]")
+                messages_log.write(f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
