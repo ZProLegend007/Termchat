@@ -318,7 +318,9 @@ class ChatScreen(Screen):
     
     #messages_container {
         height: 1fr;
-        border: solid #87CEEB;
+        border-left: solid #87CEEB;
+        border-right: solid #87CEEB;
+        border-bottom: solid #87CEEB;
         margin: 0;
     }
     
