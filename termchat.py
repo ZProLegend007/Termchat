@@ -318,9 +318,7 @@ class ChatScreen(Screen):
     
     #messages_container {
         height: 1fr;
-        border-left: solid #87CEEB;
-        border-right: solid #87CEEB;
-        border-bottom: solid #87CEEB;
+        border: solid #87CEEB;
         margin: 0;
     }
     
@@ -338,6 +336,7 @@ class ChatScreen(Screen):
         height: 5;
         border: solid #87CEEB;
         margin: 0 0 1 0;
+        padding: 1;
     }
     
     #message_input {
@@ -346,7 +345,6 @@ class ChatScreen(Screen):
         border: none;
         background: black;
         color: white;
-        padding: 1;
     }
     
     #message_input:focus {
@@ -446,8 +444,12 @@ class ChatScreen(Screen):
                         # Handle server messages during connection
                         username = data.get("username", "Unknown")
                         message = data.get("content", "")
-                        user_color = self.app.get_user_color(username)
-                        messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
+                        
+                        if username == "Server":
+                            messages_log.write(f"[bold #87CEEB][Server]:[/bold #87CEEB] {escape(message)}")
+                        else:
+                            user_color = self.app.get_user_color(username)
+                            messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
                     elif data.get("type") == "error":
                         error_message = data.get("message", "Connection failed")
                         raise Exception(error_message)
@@ -519,18 +521,24 @@ class ChatScreen(Screen):
         if message_type == "message":
             username = data.get("username", "Unknown")
             message = data.get("content", "")
-            user_color = self.app.get_user_color(username)
-            messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
+            
+            # Display messages with proper formatting
+            if username == "Server":
+                messages_log.write(f"[bold #87CEEB][Server]:[/bold #87CEEB] {escape(message)}")
+            else:
+                user_color = self.app.get_user_color(username)
+                messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
             # Handle other users joining (our own join is handled in connect_to_server)
-            if username != self.username:
+            if username and username != self.username:
                 messages_log.write(f"[bold #87CEEB]A wild {username} has appeared.[/bold #87CEEB]")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
-            messages_log.write(f"[bold #87CEEB]{username} has left the chat.[/bold #87CEEB]")
+            if username:
+                messages_log.write(f"[bold #87CEEB]{username} has left the chat.[/bold #87CEEB]")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
