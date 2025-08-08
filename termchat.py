@@ -40,7 +40,7 @@ class SplashScreen(Screen):
     SplashScreen {
         align: center middle;
         background: black;
-        color: #00ff00;
+        color: #87CEEB;
     }
     
     #splash {
@@ -48,7 +48,7 @@ class SplashScreen(Screen):
         height: auto;
         content-align: center middle;
         text-style: bold;
-        color: #00ff00;
+        color: #87CEEB;
     }
     """
 
@@ -79,7 +79,7 @@ class ConnectionScreen(Screen):
     #dialog {
         width: 80;
         height: 25;
-        border: solid #00ff00;
+        border: solid #87CEEB;
         background: black;
         color: white;
     }
@@ -89,7 +89,7 @@ class ConnectionScreen(Screen):
         width: 100%;
         content-align: center middle;
         text-style: bold;
-        color: #00ff00;
+        color: #87CEEB;
         background: black;
         padding: 1 0;
     }
@@ -123,7 +123,7 @@ class ConnectionScreen(Screen):
     }
     
     .input:focus {
-        border: solid #00ff00;
+        border: solid #87CEEB;
     }
     
     #buttons {
@@ -309,16 +309,16 @@ class ChatScreen(Screen):
         dock: top;
         height: 3;
         background: black;
-        color: #00ff00;
+        color: #87CEEB;
         content-align: center middle;
         text-style: bold;
-        border-bottom: solid #00ff00;
+        border-bottom: solid #87CEEB;
         padding: 1 0;
     }
     
     #messages_container {
         height: 1fr;
-        border: solid #00ff00;
+        border: solid #87CEEB;
         margin: 0;
     }
     
@@ -333,14 +333,14 @@ class ChatScreen(Screen):
     
     #input_container {
         dock: bottom;
-        height: 3;
-        border: solid #00ff00;
+        height: 5;
+        border: solid #87CEEB;
         margin: 0 0 1 0;
     }
     
     #message_input {
         width: 1fr;
-        height: 1fr;
+        height: 3;
         border: none;
         background: black;
         color: white;
@@ -436,7 +436,7 @@ class ChatScreen(Screen):
                         # Join successful - set connected state
                         self.app.connected = True
                         self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
-                        messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
+                        messages_log.write(f"[bold #87CEEB]Successfully joined chat '{self.chat_name}'[/bold #87CEEB]")
                         # Focus the input field after successful connection
                         self.query_one("#message_input").focus()
                         break
@@ -524,11 +524,11 @@ class ChatScreen(Screen):
             username = data.get("username", "Unknown")
             # Handle other users joining (our own join is handled in connect_to_server)
             if username != self.username:
-                messages_log.write(f"[bold #00ff00]A wild {username} has appeared.[/bold #00ff00]")
+                messages_log.write(f"[bold #87CEEB]A wild {username} has appeared.[/bold #87CEEB]")
         
         elif message_type == "leave":
             username = data.get("username", "Unknown")
-            messages_log.write(f"[bold #00ff00]{username} has left the chat.[/bold #00ff00]")
+            messages_log.write(f"[bold #87CEEB]{username} has left the chat.[/bold #87CEEB]")
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
@@ -597,7 +597,7 @@ class TermchatApp(App):
     def get_user_color(self, username: str) -> str:
         """Get or assign a color for a username"""
         if username.lower() == "server":
-            return "bold bright_blue"
+            return "bold #87CEEB"
         
         if username not in self.user_colors:
             self.user_colors[username] = USER_COLORS[self.color_index % len(USER_COLORS)]
