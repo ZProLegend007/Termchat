@@ -502,7 +502,6 @@ class ChatScreen(Screen):
             if username == self.username:
                 self.app.connected = True
                 self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
-                messages_log.write("[bold bright_blue][Server]:[/bold bright_blue] Connected successfully")
                 messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
                 # Focus the input field after successful connection
                 self.query_one("#message_input").focus()
