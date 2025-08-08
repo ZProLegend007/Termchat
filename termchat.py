@@ -322,7 +322,6 @@ class ChatScreen(Screen):
         height: 1fr;
         border: thin #00ff00;
         margin: 0;
-        background: black;
     }
     
     #messages {
@@ -336,44 +335,23 @@ class ChatScreen(Screen):
     
     #input_container {
         dock: bottom;
-        height: 4;
+        height: 3;
         border: thin #00ff00;
         margin: 0 0 1 0;
-        background: black;
-    }
-    
-    #input_prompt {
-        dock: left;
-        width: 16;
-        content-align: right middle;
-        color: #00ff00;
-        background: black;
-        text-style: bold;
-        padding-right: 1;
     }
     
     #message_input {
         width: 1fr;
+        height: 1fr;
         border: none;
         background: black;
         color: white;
-        margin: 1;
+        padding: 1;
     }
     
     #message_input:focus {
         background: #001100;
         border: solid #333333;
-    }
-    
-    #footer {
-        dock: bottom;
-        height: 2;
-        background: black;
-        color: #666666;
-        content-align: center middle;
-        text-style: italic;
-        border-top: solid #333333;
-        padding: 0;
     }
     """
     
@@ -393,9 +371,7 @@ class ChatScreen(Screen):
         with Container(id="messages_container"):
             yield RichLog(id="messages", highlight=True, markup=True)
         with Container(id="input_container"):
-            yield Label("Enter message:", id="input_prompt")
             yield Input(placeholder="Type your message here...", id="message_input")
-        yield Label("[bold #00ff00]Commands:[/bold #00ff00] /quit, /exit, /q to quit • [bold #00ff00]Ctrl+C[/bold #00ff00] to force quit", id="footer")
 
     async def on_mount(self):
         """Initialize the chat screen"""
