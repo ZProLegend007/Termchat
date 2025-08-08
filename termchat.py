@@ -8,6 +8,7 @@ import asyncio
 import websockets
 import json
 import sys
+import random
 from typing import Optional
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
@@ -31,6 +32,15 @@ TERMCHAT_ASCII = """
    ██    ██      ██   ██ ██  ██  ██ ██      ██   ██ ██   ██    ██    
    ██    ███████ ██   ██ ██      ██  ██████ ██   ██ ██   ██    ██    
 """
+
+# ASCII Art for BIGGO (/n command)
+BIGGO_ASCII = """░▒▓███████▓▒░  ░▒▓█▓▒░  ░▒▓██████▓▒░   ░▒▓██████▓▒░   ░▒▓██████▓▒░  
+░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░ ░▒▓█▓▒░        ░▒▓█▓▒░        ░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░ ░▒▓█▓▒▒▓███▓▒░ ░▒▓█▓▒▒▓███▓▒░ ░▒▓████████▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░  ░▒▓██████▓▒░   ░▒▓██████▓▒░  ░▒▓█▓▒░░▒▓█▓▒░ """
 
 
 class SplashScreen(Screen):
@@ -320,11 +330,47 @@ class ChatScreen(Screen):
             await self.app.action_quit()
             return
         
+        # Handle /colour command
+        if user_message.lower() == '/colour':
+            await self.handle_colour_command()
+            return
+        
+        # Handle /n command (hidden)
+        if user_message.lower() == '/n':
+            await self.handle_n_command()
+            return
+        
         # Send message to server
         await self.send_message(user_message)
 
     def action_quit(self):
         self.app.action_quit()
+
+    async def handle_colour_command(self):
+        """Handle the /colour command - generate random hex color and apply locally"""
+        messages_log = self.query_one("#messages", RichLog)
+        
+        # Generate a random 6-digit hex colour
+        hex_color = f"#{random.randint(0, 0xFFFFFF):06x}"
+        
+        # Change the user's color in the app's color mapping
+        self.app.user_colors[self.username] = f"#{hex_color[1:]}"  # Remove # for textual color format
+        
+        # Send colourshift response back to frontend (show what's being sent for integration)
+        colourshift_response = {
+            "type": "colourshift",
+            "color": hex_color,
+            "username": self.username
+        }
+        
+        # Display the colourshift info locally (for integration reference)
+        messages_log.write(f"[bold #87CEEB]Colourshift response: {json.dumps(colourshift_response)}[/bold #87CEEB]")
+        messages_log.write(f"[bold #87CEEB]Your message color changed to {hex_color}[/bold #87CEEB]")
+
+    async def handle_n_command(self):
+        """Handle the /n command - send BIGGO ASCII art to everyone in the chat"""
+        # Send the ASCII art as a regular message so it gets broadcasted to everyone
+        await self.send_message(BIGGO_ASCII)
 
     async def connect_to_server(self):
         """Establish WebSocket connection to the backend"""
