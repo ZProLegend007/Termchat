@@ -209,10 +209,8 @@ class ConnectionScreen(Screen):
         status_label = self.query_one("#status_label")
         status_label.update("[yellow]Connecting...[/yellow]")
         
-        # Attempt connection first
+        # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
         try:
-            await self.test_connection(username, chat_name, password)
-            # If successful, start the chat
             self.app.start_chat(username, chat_name, password)
         except Exception as e:
             # Connection failed, show error and reset
@@ -220,76 +218,6 @@ class ConnectionScreen(Screen):
             status_label.update(f"[red]Connection failed: {str(e)}[/red]")
             self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
 
-    async def test_connection(self, username: str, chat_name: str, password: str):
-        """Test connection to server before proceeding to chat"""
-        import ssl
-        ssl_context = ssl.create_default_context()
-        
-        try:
-            # Test connection
-            test_ws = await websockets.connect(
-                self.app.server_url,
-                ssl=ssl_context,
-                ping_interval=30,
-                ping_timeout=10,
-                close_timeout=5,
-                max_size=2**20,
-                max_queue=32
-            )
-            
-            # Send test auth message
-            auth_message = {
-                "type": "join",
-                "username": username,
-                "chatname": chat_name,
-                "password": password
-            }
-            
-            await test_ws.send(json.dumps(auth_message))
-            
-            # Wait for response (with timeout)
-            try:
-                response = await asyncio.wait_for(test_ws.recv(), timeout=5.0)
-                data = json.loads(response)
-                
-                # Check if join was successful
-                if data.get("type") == "join" and data.get("username") == username:
-                    await test_ws.close()
-                    return True
-                elif data.get("type") == "error":
-                    await test_ws.close()
-                    raise Exception(data.get("message", "Unknown error"))
-                else:
-                    await test_ws.close()
-                    raise Exception("Unexpected server response")
-                    
-            except asyncio.TimeoutError:
-                await test_ws.close()
-                raise Exception("Server response timeout")
-            except Exception as e:
-                await test_ws.close()
-                raise e
-                
-        except websockets.exceptions.InvalidStatusCode as e:
-            if e.status_code == 403:
-                raise Exception("Server is currently disabled or unavailable")
-            else:
-                raise Exception(f"Server rejected connection: HTTP {e.status_code}")
-        except OSError as e:
-            if "Name or service not known" in str(e):
-                raise Exception("Cannot resolve server address")
-            elif "Connection refused" in str(e):
-                raise Exception("Server is not responding")
-            else:
-                raise Exception(f"Network error: {str(e)}")
-        except Exception as e:
-            if "server rejected WebSocket connection" in str(e):
-                if "403" in str(e):
-                    raise Exception("Server is currently disabled or unavailable")
-                else:
-                    raise Exception("Server rejected connection")
-            else:
-                raise Exception(f"Connection failed: {str(e)}")
 
     def action_quit(self):
         self.app.exit()
@@ -345,6 +273,7 @@ class ChatScreen(Screen):
         border: none;
         background: black;
         color: white;
+        content-align: center middle;
     }
     
     #message_input:focus {
