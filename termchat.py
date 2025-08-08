@@ -378,7 +378,7 @@ class ChatScreen(Screen):
                             messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
                         else:
                             user_color = self.app.get_user_color(username)
-                            messages_log.write(f"[{user_color}]{escape(username)}:[/{user_color}] {escape(message)}")
+                            messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
                     elif data.get("type") == "error":
                         error_message = data.get("message", "Connection failed")
                         raise Exception(error_message)
@@ -456,7 +456,7 @@ class ChatScreen(Screen):
                 messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
             else:
                 user_color = self.app.get_user_color(username)
-                messages_log.write(f"[{user_color}]{escape(username)}:[/{user_color}] {escape(message)}")
+                messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
