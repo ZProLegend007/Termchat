@@ -117,15 +117,13 @@ class ConnectionScreen(Screen):
     
     .input {
         width: 35;
-        height: 1;
-        background: #111111;
+        height: 3;
         color: white;
         border: solid #333333;
     }
     
     .input:focus {
         border: solid #00ff00;
-        background: #001100;
     }
     
     #buttons {
@@ -320,7 +318,7 @@ class ChatScreen(Screen):
     
     #messages_container {
         height: 1fr;
-        border: thin #00ff00;
+        border: solid #00ff00;
         margin: 0;
     }
     
@@ -336,7 +334,7 @@ class ChatScreen(Screen):
     #input_container {
         dock: bottom;
         height: 3;
-        border: thin #00ff00;
+        border: solid #00ff00;
         margin: 0 0 1 0;
     }
     
@@ -350,7 +348,6 @@ class ChatScreen(Screen):
     }
     
     #message_input:focus {
-        background: #001100;
         border: solid #333333;
     }
     """
