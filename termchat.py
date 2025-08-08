@@ -315,6 +315,12 @@ class ChatScreen(Screen):
         if not user_message:
             return
             
+        # Handle clear command
+        if user_message.lower() == '/clear':
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.clear()
+            return
+            
         # Handle quit commands
         if user_message.lower() in ['/quit', '/exit', '/q']:
             await self.app.action_quit()
@@ -470,6 +476,12 @@ class ChatScreen(Screen):
             if username and username != self.username:
                 messages_log.write(f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
         
+        elif message_type == "colourshift":
+            # Handle theme color change
+            new_color = data.get("color", "#87CEEB")
+            await self.change_theme_color(new_color)
+            messages_log.write(f"[bold {new_color}]Theme color changed to {new_color}[/bold {new_color}]")
+        
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
             messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
@@ -506,6 +518,23 @@ class ChatScreen(Screen):
             messages_log = self.query_one("#messages", RichLog)
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
+    async def change_theme_color(self, new_color: str):
+        """Change the theme color of the interface"""
+        # Update the header widget style
+        header = self.query_one("#header")
+        header.styles.color = new_color
+        
+        # Update message container border
+        messages_container = self.query_one("#messages_container")
+        messages_container.styles.border = ("solid", new_color)
+        
+        # Update input container border  
+        input_container = self.query_one("#input_container")
+        input_container.styles.border = ("solid", new_color)
+        
+        # Store the new color in the app for future use
+        self.app.theme_color = new_color
+
 
 class TermchatApp(App):
     """Main Termchat application using proper screen management"""
@@ -521,6 +550,7 @@ class TermchatApp(App):
         self.user_colors: dict = {}  # Maps usernames to colors
         self.color_index: int = 0    # For cycling through colors
         self.connected: bool = False
+        self.theme_color: str = "#87CEEB"  # Current theme color
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
