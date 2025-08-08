@@ -429,7 +429,34 @@ class ChatScreen(Screen):
             
             await self.app.websocket.send(json.dumps(auth_message))
             
-            # Start listening for messages
+            # Wait for join confirmation before considering connection complete
+            try:
+                while True:
+                    response = await asyncio.wait_for(self.app.websocket.recv(), timeout=10.0)
+                    data = json.loads(response)
+                    
+                    if data.get("type") == "join" and data.get("username") == self.username:
+                        # Join successful - set connected state
+                        self.app.connected = True
+                        self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
+                        messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
+                        # Focus the input field after successful connection
+                        self.query_one("#message_input").focus()
+                        break
+                    elif data.get("type") == "message":
+                        # Handle server messages during connection
+                        username = data.get("username", "Unknown")
+                        message = data.get("content", "")
+                        user_color = self.app.get_user_color(username)
+                        messages_log.write(f"[{user_color}][{username}]:[/{user_color}] {escape(message)}")
+                    elif data.get("type") == "error":
+                        error_message = data.get("message", "Connection failed")
+                        raise Exception(error_message)
+                        
+            except asyncio.TimeoutError:
+                raise Exception("Server response timeout - no join confirmation received")
+            
+            # Start listening for messages after successful join
             asyncio.create_task(self.listen_for_messages())
             
         except websockets.exceptions.InvalidStatusCode as e:
@@ -498,14 +525,8 @@ class ChatScreen(Screen):
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            # If it's our own join message, it means successful connection
-            if username == self.username:
-                self.app.connected = True
-                self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
-                messages_log.write(f"[bold #00ff00]Successfully joined chat '{self.chat_name}'[/bold #00ff00]")
-                # Focus the input field after successful connection
-                self.query_one("#message_input").focus()
-            else:
+            # Handle other users joining (our own join is handled in connect_to_server)
+            if username != self.username:
                 messages_log.write(f"[bold #00ff00]A wild {username} has appeared.[/bold #00ff00]")
         
         elif message_type == "leave":
