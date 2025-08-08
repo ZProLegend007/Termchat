@@ -458,6 +458,11 @@ class ChatScreen(Screen):
                 user_color = self.app.get_user_color(username)
                 messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
         
+        elif message_type == "colourshift":
+            # Handle color change command from server
+            hex_color = data.get("color", "87CEEB")
+            await self.handle_colourshift(hex_color)
+        
         elif message_type == "join":
             username = data.get("username", "Unknown")
             # Handle other users joining - server doesn't send join notifications back to joining user
@@ -484,6 +489,30 @@ class ChatScreen(Screen):
             self.app.notify(f"Authentication failed: {error_message}", severity="error")
             # Go back to connection screen
             self.app.pop_screen()
+    
+    async def handle_colourshift(self, hex_color: str):
+        """Handle color shift command - change terminal theme colors"""
+        messages_log = self.query_one("#messages", RichLog)
+        
+        # Store the new color
+        self.app.current_color = f"#{hex_color}"
+        
+        # Update the header color
+        header = self.query_one("#header")
+        header.styles.color = f"#{hex_color}"
+        
+        # Update border colors for visual feedback
+        messages_container = self.query_one("#messages_container")
+        input_container = self.query_one("#input_container")
+        messages_container.styles.border = f"solid #{hex_color}"
+        input_container.styles.border = f"solid #{hex_color}"
+        
+        # Show confirmation message to user
+        messages_log.write(f"[bold #{hex_color}]✨ Terminal colors shifted to #{hex_color}![/bold #{hex_color}]")
+        
+        # Log for debugging/integration
+        import logging
+        logging.info(f"Colourshift applied: #{hex_color} - This response is sent back to the frontend script for integration")
 
     async def send_message(self, user_message: str):
         """Send message to server"""
@@ -521,9 +550,14 @@ class TermchatApp(App):
         self.user_colors: dict = {}  # Maps usernames to colors
         self.color_index: int = 0    # For cycling through colors
         self.connected: bool = False
+        self.current_color: str = "#87CEEB"  # Default terminal color
         
-        # Backend server URL (HTTPS WebSocket on port 443)
-        self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
+        # Backend server URLs - local server for testing new commands
+        self.local_server_url = "ws://localhost:8765"
+        self.remote_server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
+        
+        # Use local server by default for testing new commands
+        self.server_url = self.local_server_url
 
     def on_mount(self):
         """Start with the splash screen"""
