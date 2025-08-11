@@ -1,3 +1,5 @@
+![Dynamic JSON Badge](https://img.shields.io/endpoint?url=https://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net/badge.json)
+
 # Termchat
 
 Cross-platform Python terminal chat client. Tons of fun features, easy to use, and works over https for availability on all networks! (Even school!)
