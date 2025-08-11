@@ -1,6 +1,6 @@
 # Termchat
 
-Cross-platform Python terminal client for real-time chat. Connect to the termchat-backend and chat with others using simple authentication.
+Cross-platform Python terminal chat client. Tons of fun features, easy to use, and works over https for availability on all networks! (Even school!)
 
 ## Features
 
@@ -9,32 +9,27 @@ Cross-platform Python terminal client for real-time chat. Connect to the termcha
 - Real-time messaging with other users
 - Simple authentication (username, chat name, password)
 - Clean terminal interface with formatted messages
+- Fun /commands - including some old hangouts commands!
 
 ## Installation
 
-1. Clone this repository
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+Will be releasing simple binaries for all OSes soon!
 
 ## Usage
 
-Run the chat client:
+Run the binaries for your chosen OS!
+
+Or run the unbuilt chat client directly using python:
 ```bash
 python3 termchat.py
-```
-
-Or make it executable and run directly:
-```bash
-chmod +x termchat.py
-./termchat.py
 ```
 
 The script will prompt you for:
 - **Username**: Your display name in the chat
 - **Chat name**: The chat room to join
 - **Password**: Password for the chat room
+
+Each combination of chat name and password creates/joins a new room. You can have multiple chats of the same name, but in order to join the same one as someone else the password must be the same!
 
 ## Chat Interface
 
@@ -49,13 +44,17 @@ A wild Username2 has appeared.
 
 - `/quit`, `/exit`, `/q`: Exit the chat
 - `/clear`: Clear the message box/chat area
-- `Ctrl+C`: Force quit
+- `Ctrl+Q`: Exit termchat
 
 ## Requirements
 
+None! (Unless you are running the python script;)
+
+If you are running the script directly you will need;
 - Python 3.7+
-- websockets library (see requirements.txt)
+- websockets library
+- textual
 
 ## Backend
 
-Connects to: https://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net/
+Connects to a server hosted on azure. All information is passed through directly and is not stored.
