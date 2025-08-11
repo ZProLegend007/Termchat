@@ -15,7 +15,54 @@ from textual.widgets import Input, RichLog, Static, Label
 from textual.binding import Binding
 from textual.screen import Screen
 from rich.markup import escape
+import os
+import platform
+import subprocess
+import shlex
 
+def is_in_terminal():
+    """Heuristically check if we're running in a real terminal."""
+    return sys.stdin.isatty()
+
+def launch_new_terminal():
+    """Attempt to launch a new terminal window running this script."""
+    script_path = os.path.abspath(__file__)
+
+    if platform.system() == "Windows":
+        python = shlex.quote(sys.executable)
+        if script_path.lower().endswith(".py"):
+            cmd = f'start cmd /k {python} "{script_path}"'
+        else:
+            cmd = f'start cmd /k "{script_path}"'
+        os.system(cmd)
+        sys.exit(0)
+
+    elif platform.system() == "Darwin":
+        python = shlex.quote(sys.executable)
+        cmd = f'osascript -e \'tell application "Terminal" to do script "{python} {script_path}"\''
+        os.system(cmd)
+        sys.exit(0)
+
+    elif platform.system() == "Linux":
+        python = shlex.quote(sys.executable)
+        terminals = [
+            f'gnome-terminal -- {python} "{script_path}"',
+            f'konsole -e {python} "{script_path}"',
+            f'xfce4-terminal -e "{python} {script_path}"',
+            f'xterm -e {python} "{script_path}"'
+        ]
+        for term in terminals:
+            try:
+                subprocess.Popen(term, shell=True)
+                sys.exit(0)
+            except Exception:
+                continue
+        print("No supported terminal emulator found. Please run this script from a terminal.")
+        sys.exit(1)
+    else:
+        print("Unsupported OS.")
+        sys.exit(1)
+        
 # User colors for cycling through usernames
 USER_COLORS = [
     "red", "green", "yellow", "magenta", 
@@ -590,13 +637,14 @@ async def main():
     app = TermchatApp()
     await app.run_async()
 
-
 if __name__ == "__main__":
     try:
         # Ensure asyncio compatibility across platforms
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        
+        # Relaunch in terminal if not already in one
+        if not is_in_terminal():
+            launch_new_terminal()
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nExiting...")
