@@ -48,6 +48,7 @@ A wild Username2 has appeared.
 ## Commands
 
 - `/quit`, `/exit`, `/q`: Exit the chat
+- `/clear`: Clear the message box/chat area
 - `Ctrl+C`: Force quit
 
 ## Requirements
