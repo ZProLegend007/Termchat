@@ -61,5 +61,5 @@ jobs:
       - name: Upload .exe as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termchat-windows-exe
+          name: Termchat
           path: dist/Termchat.exe
