@@ -51,6 +51,7 @@ jobs:
           echo "HIDDEN_IMPORTS=$HIDDEN_IMPORTS" >> $GITHUB_ENV
 
       - name: Build .exe with PyInstaller
+        shell: bash
         run: |
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
             pyinstaller --onefile $HIDDEN_IMPORTS --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
