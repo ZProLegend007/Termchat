@@ -17,11 +17,19 @@ Cross-platform Python terminal chat client. Tons of fun features, easy to use, a
 
 Binaries have been released! Check the releases tab for the downloads!
 
+No installation necessary. It's completely portable!
+
 ## Usage
 
 Run the binaries for your chosen OS!
 
-Or run the unbuilt chat client directly using python:
+On windows you may have to tell smartscreen to 'run anyway'
+On MacOS you may have to follow some steps to be able to run the app (see Pre-Release instructions)
+Linux hasn't been tested yet but assumed working!
+
+**Or**
+
+Run the unpackaged chat client directly using python:
 ```bash
 python3 termchat.py
 ```
