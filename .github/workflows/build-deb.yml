@@ -101,5 +101,5 @@ jobs:
       - name: Upload .deb as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termchat-deb
+          name: Termchat
           path: debbuild/termchat.deb
