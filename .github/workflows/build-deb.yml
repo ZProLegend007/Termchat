@@ -20,12 +20,12 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip python3-setuptools python3-wheel python3-pyinstaller fakeroot dpkg-dev
+          sudo apt-get install -y python3-pip python3-setuptools python3-wheel fakeroot dpkg-dev
 
       - name: Install Python requirements
         run: |
           python3 -m pip install --upgrade pip
-          pip3 install -r requirements.txt
+          pip3 install -r requirements.txt pyinstaller
 
       - name: Generate hidden-import args
         id: gen_hidden_imports
