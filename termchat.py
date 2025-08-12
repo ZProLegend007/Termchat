@@ -8,6 +8,7 @@ import asyncio
 import websockets
 import json
 import sys
+import certifi
 from typing import Optional
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
