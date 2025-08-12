@@ -56,13 +56,8 @@ jobs:
             pyinstaller --windowed $HIDDEN_IMPORTS --name Termchat termchat.py
           fi
 
-      - name: Zip the app
-        run: |
-          cd dist
-          zip -r termchat.zip Termchat.app
-
-      - name: Upload .zip as workflow artifact
+      - name: Upload binary as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termchat-macos-app
-          path: dist/termchat.zip
+          name: Termchat
+          path: dist/Termchat.app
