@@ -80,7 +80,6 @@ TERMCHAT_ASCII = """
    ██    ███████ ██   ██ ██      ██  ██████ ██   ██ ██   ██    ██    
 """
 
-
 class SplashScreen(Screen):
     """ASCII Art splash screen shown for 2 seconds"""
     
