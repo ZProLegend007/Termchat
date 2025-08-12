@@ -56,8 +56,13 @@ jobs:
             pyinstaller --windowed $HIDDEN_IMPORTS --name Termchat termchat.py
           fi
 
+      - name: Move .app into Termchat folder
+        run: |
+          mkdir -p dist/Termchat
+          mv dist/Termchat.app dist/Termchat/
+
       - name: Upload binary as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: Termchat
-          path: dist/Termchat.app
+          path: dist/Termchat
