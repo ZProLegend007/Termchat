@@ -15,7 +15,7 @@ Cross-platform Python terminal chat client. Tons of fun features, easy to use, a
 
 ## Installation
 
-Will be releasing simple binaries for all OSes soon!
+Binaries have been released! Check the releases tab for the downloads!
 
 ## Usage
 
