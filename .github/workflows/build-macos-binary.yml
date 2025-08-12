@@ -1,0 +1,68 @@
+name: Build macOS Binary
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'termchat.py'
+      - 'requirements.txt'
+      - '.github/workflows/build-macos-binary.yml'
+      - 'icons/*'
+
+jobs:
+  build-macos-app:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Find .icns icon file
+        id: find_icon
+        run: |
+          ICON_PATH=$(find icons -name '*.icns' | head -n 1 || true)
+          if [ -z "$ICON_PATH" ]; then
+            echo "No .icns icon found in icons/. An icon will not be set."
+          fi
+          echo "icon_path=$ICON_PATH" >> $GITHUB_OUTPUT
+
+      - name: Generate hidden-import args
+        id: gen_hidden_imports
+        run: |
+          HIDDEN_IMPORTS=""
+          while IFS= read -r module; do
+            MOD=$(echo "$module" | cut -d'=' -f1 | cut -d'<' -f1 | cut -d'>' -f1 | sed 's/\[.*\]//g' | xargs)
+            if [ -n "$MOD" ]; then
+              HIDDEN_IMPORTS="$HIDDEN_IMPORTS --hidden-import $MOD"
+            fi
+          done < requirements.txt
+          echo "HIDDEN_IMPORTS=$HIDDEN_IMPORTS" >> $GITHUB_ENV
+
+      - name: Build .app with PyInstaller
+        run: |
+          if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
+            pyinstaller --windowed $HIDDEN_IMPORTS --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
+          else
+            pyinstaller --windowed $HIDDEN_IMPORTS --name Termchat termchat.py
+          fi
+
+      - name: Zip the app
+        run: |
+          cd dist
+          zip -r termchat.zip Termchat.app
+
+      - name: Upload .zip as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: termchat-macos-app
+          path: dist/termchat.zip
