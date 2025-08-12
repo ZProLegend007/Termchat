@@ -17,18 +17,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install requirements
+      - name: Install Python 3.10 (x86_64) via Homebrew
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -x86_64 brew install python@3.10
+
+      - name: Install Python 3.10 (arm64) via Homebrew
+        run: |
+          arch -arm64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          arch -arm64 brew install python@3.10
+
+      - name: Install PyInstaller for both architectures
+        run: |
+          arch -x86_64 /usr/local/bin/python3.10 -m pip install --upgrade pip pyinstaller
+          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install --upgrade pip pyinstaller
+
+      - name: Install project requirements for both architectures
+        run: |
+          arch -x86_64 /usr/local/bin/python3.10 -m pip install -r requirements.txt
+          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install -r requirements.txt
 
       - name: Find .icns icon file
         id: find_icon
+        shell: bash
         run: |
           ICON_PATH=$(find icons -name '*.icns' | head -n 1 || true)
           if [ -z "$ICON_PATH" ]; then
@@ -38,6 +49,7 @@ jobs:
 
       - name: Generate hidden-import args
         id: gen_hidden_imports
+        shell: bash
         run: |
           HIDDEN_IMPORTS=""
           while IFS= read -r module; do
@@ -48,21 +60,43 @@ jobs:
           done < requirements.txt
           echo "HIDDEN_IMPORTS=$HIDDEN_IMPORTS" >> $GITHUB_ENV
 
-      - name: Build .app with PyInstaller
+      - name: Build x86_64 .app with PyInstaller
+        shell: bash
         run: |
+          rm -rf dist_x86_64 build_x86_64
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
-            pyinstaller --windowed $HIDDEN_IMPORTS --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
+            arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
           else
-            pyinstaller --windowed $HIDDEN_IMPORTS --name Termchat termchat.py
+            arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat termchat.py
           fi
+
+      - name: Build arm64 .app with PyInstaller
+        shell: bash
+        run: |
+          rm -rf dist_arm64 build_arm64
+          if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
+            arch -arm64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
+          else
+            arch -arm64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat termchat.py
+          fi
+
+      - name: Create universal2 binary
+        run: |
+          mkdir -p dist/Termchat.app/Contents/MacOS
+          lipo -create dist_x86_64/Termchat.app/Contents/MacOS/Termchat dist_arm64/Termchat.app/Contents/MacOS/Termchat -output dist/Termchat.app/Contents/MacOS/Termchat
+
+      - name: Copy arm64 .app structure for universal .app
+        run: |
+          rsync -a --exclude=Termchat dist_arm64/Termchat.app/ dist/Termchat.app/
+          # Ensures the universal2 binary replaces the Mach-O binary in new app
 
       - name: Move .app into Termchat folder
         run: |
           mkdir -p dist/Termchat
           mv dist/Termchat.app dist/Termchat/
 
-      - name: Upload binary as workflow artifact
+      - name: Upload Termchat folder as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Termchat
+          name: Termchat-MacOS
           path: dist/Termchat
