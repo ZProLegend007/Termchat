@@ -386,7 +386,8 @@ class ChatScreen(Screen):
         try:
             # Create SSL context with proper settings
             import ssl
-            ssl_context = ssl.create_default_context()
+            import certifi
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
             
             self.app.websocket = await websockets.connect(
                 self.app.server_url,
