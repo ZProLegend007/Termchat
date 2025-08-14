@@ -129,7 +129,6 @@ class ConnectionScreen(Screen):
         border: solid #87CEEB;
         background: black;
         color: white;
-        content-align: center middle;
     }
     #title {
         dock: top;
@@ -210,7 +209,7 @@ class ConnectionScreen(Screen):
                 yield Label("Checking server...", id="indicator_text")
             yield Container(
                 Label(
-                    "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
+                    "       Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
                     markup=True
                 ),
                 id="hint_row"
