@@ -82,8 +82,8 @@ jobs:
           EOF
 
           # Create DEBIAN control files
-          mkdir -p debbuild/termchat/DEBIAN
-          cat <<EOF > debbuild/termchat/DEBIAN/control
+          mkdir -p debbuild/Termchat/DEBIAN
+          cat <<EOF > debbuild/Termchat/DEBIAN/control
           Package: termchat
           Version: 1.0.0
           Section: utils
