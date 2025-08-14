@@ -119,15 +119,25 @@ class ConnectionScreen(Screen):
     
     CSS = """
     ConnectionScreen {
-        align: center middle;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         background: black;
     }
+    
     #dialog {
         width: 80;
         height: 25;
         border: solid #87CEEB;
         background: black;
         color: white;
+        /* Remove align: center middle; if present */
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: start;
     }
     #title {
         dock: top;
