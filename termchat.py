@@ -222,6 +222,7 @@ class ConnectionScreen(Screen):
             with Container(id="indicator_row"):
                 yield Static("●", id="indicator_light")
                 yield Label("Checking server...", id="indicator_text")
+            with Container(id="hint_row"):
                 yield Label(
                     "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
                     markup=True
