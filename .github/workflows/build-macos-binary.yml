@@ -52,9 +52,9 @@ jobs:
           rm -rf dist_x86_64 build_x86_64
           ICON_PATH="${{ steps.find_icon.outputs.icon_path }}"
           if [ -n "$ICON_PATH" ]; then
-            arch -x86_64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat --icon "$ICON_PATH" termchat.py
+            arch -x86_64 python3.10 -m pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat --icon "$ICON_PATH" termchat.py
           else
-            arch -x86_64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat termchat.py
+            arch -x86_64 python3.10 -m --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat termchat.py
           fi
 
       - name: Build arm64 .app with PyInstaller
@@ -63,9 +63,9 @@ jobs:
           rm -rf dist_arm64 build_arm64
           ICON_PATH="${{ steps.find_icon.outputs.icon_path }}"
           if [ -n "$ICON_PATH" ]; then
-            arch -arm64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat --icon "$ICON_PATH" termchat.py
+            arch -arm64 python3.10 -m pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat --icon "$ICON_PATH" termchat.py
           else
-            arch -arm64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat termchat.py
+            arch -arm64 python3.10 -m pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat termchat.py
           fi
 
       - name: Create universal2 binary
