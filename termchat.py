@@ -598,7 +598,7 @@ class ChatScreen(Screen):
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             messages_log.write(f"[bold #FF0000]You have been kicked :)[/bold #FF0000]")
-            threading.Thread(target=lambda: (time.sleep(5), sys.exit(0))).start()
+            await self.app.action_quit()
             return
         
         elif message_type == "error":
