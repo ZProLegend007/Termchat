@@ -96,7 +96,7 @@ jobs:
 
       - name: Build .deb package
         run: |
-          dpkg-deb --build debbuild/termchat
+          dpkg-deb --build debbuild/Termchat
 
       - name: Upload .deb as workflow artifact
         uses: actions/upload-artifact@v4
