@@ -248,7 +248,7 @@ class ConnectionScreen(Screen):
         self.query_one("#username_input").focus()
         self.set_timer(0.1, self.check_server_status)
 
-     async def check_server_status(self):
+    async def check_server_status(self):
         # Foolproof: check server reachability (simple websocket ping or http GET)
         import websockets
         try:
