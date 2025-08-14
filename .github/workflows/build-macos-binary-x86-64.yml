@@ -69,13 +69,8 @@ jobs:
             arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat termchat.py
           fi
 
-      - name: Zip Termchat.app for artifact
-        run: |
-          cd dist_x86_64
-          zip -r Termchat-MacOS-x86_64.zip Termchat.app
-
       - name: Upload zipped Termchat.app as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: Termchat-MacOS-x86_64
-          path: dist_x86_64/Termchat-MacOS-x86_64.zip
+          path: dist_x86_64/Termchat.app
