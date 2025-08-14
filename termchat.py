@@ -234,15 +234,14 @@ class ConnectionScreen(Screen):
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
                 # Status label for connection feedback
                 with Container(id="hint_row"):
-                yield Label(
-                    "Keep the chat name and password blank to join the ",
-                    classes="hint-default"
-                )
-                yield Label("general chat", classes="hint-general")
-            with Container(id="buttons"):
+                    yield Label(
+                        "Keep the chat name and password blank to join the ",
+                        classes="hint-default"
+                    )
+                    yield Label("general chat", classes="hint-general")
                 with Container(classes="form-row"):
                     yield Label("", id="status_label", classes="label")
-            with Container(id="buttons"):
+                with Container(id="buttons"):
                 pass  # Removed command hints as requested
 
     def on_mount(self):
