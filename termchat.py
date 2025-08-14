@@ -119,12 +119,8 @@ class ConnectionScreen(Screen):
     
     CSS = """
     ConnectionScreen {
-        width: 100vw;
-        height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: black;
+        backgroud: black
+        content-align: center middle;
     }
     
     #dialog {
@@ -133,11 +129,7 @@ class ConnectionScreen(Screen):
         border: solid #87CEEB;
         background: black;
         color: white;
-        /* Remove align: center middle; if present */
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        justify-content: start;
+        content-align: center middle;
     }
     #title {
         dock: top;
@@ -165,7 +157,7 @@ class ConnectionScreen(Screen):
     #hint_row {
         width: 100%;
         content-align: center middle;
-        margin-top: 1;
+        margin-top: 2;
     }
     #form {
         layout: vertical;
