@@ -591,14 +591,21 @@ class ChatScreen(Screen):
             # messages_log.write(f"[bold {new_color}]Theme color changed to {new_color}[/bold {new_color}]")
         
         elif message_type == "bgshift":
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.clear()
             bg_color = data.get("color", "#000000")
             await self.change_background_color(bg_color)
+
+        elif message_type == "chatclear":
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.clear()
 
         elif message_type == "kicked":
             kicked_message = data.get("message", "You have been kicked :)")
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             messages_log.write(f"[bold #FF0000]{kicked_message}[/bold #FF0000]")
+            await asyncio.sleep(5)
             await self.app.action_quit()
             return
         
