@@ -119,7 +119,7 @@ class ConnectionScreen(Screen):
     
     CSS = """
     ConnectionScreen {
-        content-align: center middle;
+        align: center middle;
         background: black;
     }
     
@@ -478,7 +478,7 @@ class ChatScreen(Screen):
                     if data.get("type") == "join" and data.get("username") == self.username:
                         # Join successful - set connected state
                         self.app.connected = True
-                        self.query_one("#header").update(f"TERMCHAT - Connected to '{self.chat_name}'")
+                        self.query_one("#header").update(f"TERMCHAT - Connected to server:'{self.chat_name}'")
                         messages_log.write(f"[bold #87CEEB]Successfully joined chat '{self.chat_name}'[/bold #87CEEB]")
                         # Focus the input field after successful connection
                         self.query_one("#message_input").focus()
@@ -593,6 +593,13 @@ class ChatScreen(Screen):
         elif message_type == "bgshift":
             bg_color = data.get("color", "#000000")
             await self.change_background_color(bg_color)
+
+        elif message == "kicked":
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.clear()
+            messages_log.write(f"[bold #FF0000]You have been kicked :)[/bold #FF0000]")
+            threading.Thread(target=lambda: (time.sleep(5), sys.exit(0))).start()
+            return
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
