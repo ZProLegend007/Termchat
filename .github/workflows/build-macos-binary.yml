@@ -83,7 +83,6 @@ jobs:
       - name: Copy arm64 .app structure for universal .app
         run: |
           rsync -a --exclude=Termchat dist_arm64/Termchat.app/ dist/Termchat.app/
-          # Ensures the universal2 binary replaces the Mach-O binary in new app
 
       - name: Move .app into Termchat folder
         run: |
