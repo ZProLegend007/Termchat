@@ -17,13 +17,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Python 3.10 (x86_64) via Homebrew
+      - name: Install Python 3.10 via Homebrew
         run: |
-          arch -x86_64 brew install python@3.10
-
-      - name: Install Python 3.10 (arm64) via Homebrew
-        run: |
-          arch -arm64 brew install python@3.10
+          brew install python@3.10
 
       - name: Find .icns icon file
         id: find_icon
@@ -45,15 +41,10 @@ jobs:
           done < requirements.txt
           echo "HIDDEN_IMPORTS=$HIDDEN_IMPORTS" >> "$GITHUB_ENV"
 
-      - name: Install PyInstaller and project requirements (x86_64)
+      - name: Install PyInstaller and project requirements
         run: |
-          arch -x86_64 /usr/local/bin/python3.10 -m pip install --upgrade pip pyinstaller
-          arch -x86_64 /usr/local/bin/python3.10 -m pip install -r requirements.txt
-
-      - name: Install PyInstaller and project requirements (arm64)
-        run: |
-          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install --upgrade pip pyinstaller
-          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install -r requirements.txt
+          /usr/local/bin/python3.10 -m pip install --upgrade pip pyinstaller
+          /usr/local/bin/python3.10 -m pip install -r requirements.txt
 
       - name: Build x86_64 .app with PyInstaller
         shell: bash
