@@ -594,10 +594,11 @@ class ChatScreen(Screen):
             bg_color = data.get("color", "#000000")
             await self.change_background_color(bg_color)
 
-        elif message == "kicked":
+        elif message_type == "kicked":
+            kicked_message = data.get("message", "You have been kicked :)")
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
-            messages_log.write(f"[bold #FF0000]You have been kicked :)[/bold #FF0000]")
+            messages_log.write(f"[bold #FF0000]{kicked_message}[/bold #FF0000]")
             await self.app.action_quit()
             return
         
