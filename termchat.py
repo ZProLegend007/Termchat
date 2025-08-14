@@ -104,7 +104,7 @@ class SplashScreen(Screen):
 
     def on_mount(self):
         # Auto-advance to connection dialog after 2 seconds
-        self.set_timer(2.0, self.show_connection)
+        self.set_timer(1.25, self.show_connection)
 
     def show_connection(self):
         self.app.push_screen("connection")
@@ -122,7 +122,6 @@ class ConnectionScreen(Screen):
         align: center middle;
         background: black;
     }
-    
     #dialog {
         width: 80;
         height: 25;
@@ -130,7 +129,6 @@ class ConnectionScreen(Screen):
         background: black;
         color: white;
     }
-    
     #title {
         dock: top;
         width: 100%;
@@ -140,20 +138,31 @@ class ConnectionScreen(Screen):
         background: black;
         padding: 1 0;
     }
-    
+    #indicator_row {
+        layout: horizontal;
+        width: 100%;
+        align: center middle;
+        margin-bottom: 1;
+    }
+    #indicator_light {
+        width: 2;
+        content-align: center middle;
+    }
+    #indicator_text {
+        margin-left: 1;
+        color: white;
+    }
     #form {
         layout: vertical;
         height: auto;
         margin: 2;
         padding: 2;
     }
-    
     .form-row {
         height: 3;
         layout: horizontal;
         margin-bottom: 1;
     }
-    
     .label {
         width: 15;
         content-align: right middle;
@@ -161,18 +170,15 @@ class ConnectionScreen(Screen):
         color: #cccccc;
         text-style: bold;
     }
-    
     .input {
         width: 35;
         height: 3;
         color: white;
         border: solid #333333;
     }
-    
     .input:focus {
         border: solid #87CEEB;
     }
-    
     #buttons {
         dock: bottom;
         layout: horizontal;
@@ -181,11 +187,23 @@ class ConnectionScreen(Screen):
         background: black;
         padding: 0;
     }
-    
     #status_label {
         width: 40;
         content-align: center middle;
         color: yellow;
+        text-style: bold;
+    }
+    #hint_row {
+        dock: bottom;
+        width: 100%;
+        content-align: center middle;
+        margin-top: 1;
+    }
+    .hint-default {
+        color: white;
+    }
+    .hint-general {
+        color: #90ee90;  # Light green
         text-style: bold;
     }
     """
@@ -201,6 +219,9 @@ class ConnectionScreen(Screen):
     def compose(self) -> ComposeResult:
         with Container(id="dialog"):
             yield Label("TERMCHAT Connection", id="title")
+            with Container(id="indicator_row"):
+                yield Static("●", id="indicator_light")
+                yield Label("Checking server...", id="indicator_text")
             with Vertical(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
@@ -212,6 +233,13 @@ class ConnectionScreen(Screen):
                     yield Label("Password:", classes="label")
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
                 # Status label for connection feedback
+                with Container(id="hint_row"):
+                yield Label(
+                    "Keep the chat name and password blank to join the ",
+                    classes="hint-default"
+                )
+                yield Label("general chat", classes="hint-general")
+            with Container(id="buttons"):
                 with Container(classes="form-row"):
                     yield Label("", id="status_label", classes="label")
             with Container(id="buttons"):
@@ -219,6 +247,28 @@ class ConnectionScreen(Screen):
 
     def on_mount(self):
         self.query_one("#username_input").focus()
+        self.set_timer(0.1, self.check_server_status)
+
+     async def check_server_status(self):
+        # Foolproof: check server reachability (simple websocket ping or http GET)
+        import websockets
+        try:
+            ws = await websockets.connect(self.app.server_url, ping_timeout=2)
+            await ws.close()
+            self.server_available = True
+        except Exception:
+            self.server_available = False
+        self.update_indicator()
+
+    def update_indicator(self):
+        indicator_light = self.query_one("#indicator_light")
+        indicator_text = self.query_one("#indicator_text")
+        if self.server_available:
+            indicator_light.update("●", style="color: #00ff00")  # Green
+            indicator_text.update("Server available.", style="color: #00ff00")
+        else:
+            indicator_light.update("●", style="color: #ff0000")  # Red
+            indicator_text.update("Server unavailable.", style="color: #ff0000")
     
     async def on_input_submitted(self, event: Input.Submitted):
         """Handle Enter key in any input field - navigate to next or connect"""
@@ -338,7 +388,9 @@ class ChatScreen(Screen):
         self.username = username
         self.chat_name = chat_name
         self.password = password
-
+        self._last_sent_message = ""    # Stores the last sent message
+        self._recalled = False          # Tracks if recall is active
+        
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
         with Container(id="messages_container"):
@@ -350,6 +402,11 @@ class ChatScreen(Screen):
         """Initialize the chat screen"""
         # Start connection to server
         await self.connect_to_server()
+         # Bind arrow keys for recall
+        input_widget = self.query_one("#message_input")
+        input_widget.can_focus = True
+        input_widget.focus()
+        input_widget._on_key = self._on_input_key  # Monkey patch key handler
 
     async def on_input_submitted(self, event: Input.Submitted):
         """Handle user message input"""
@@ -358,12 +415,16 @@ class ChatScreen(Screen):
             
         user_message = event.value.strip()
         event.input.clear()
+
+        if user_message:
+            self._last_sent_message = user_message
+            self._recalled = False
         
         if not user_message:
             return
             
         # Handle clear command
-        if user_message.lower() == '/clear':
+        if user_message.lower() in ['/clear','/c']:
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             return
@@ -378,6 +439,24 @@ class ChatScreen(Screen):
 
     def action_quit(self):
         self.app.action_quit()
+
+    def _on_input_key(self, event):
+        input_widget = self.query_one("#message_input")
+        # Up arrow: recall last sent
+        if event.key == "up":
+            if self._last_sent_message and not self._recalled:
+                input_widget.value = self._last_sent_message
+                self._recalled = True
+                input_widget.cursor_position = len(self._last_sent_message)
+        # Down arrow: clear recall if active
+        elif event.key == "down":
+            if self._recalled:
+                input_widget.value = ""
+                self._recalled = False
+        else:
+            # Pass through to normal key handler if defined
+            if hasattr(Input, "_on_key"):
+                Input._on_key(input_widget, event)
 
     async def connect_to_server(self):
         """Establish WebSocket connection to the backend"""
@@ -528,7 +607,11 @@ class ChatScreen(Screen):
             # Handle theme color change
             new_color = data.get("color", "#87CEEB")
             await self.change_theme_color(new_color)
-            messages_log.write(f"[bold {new_color}]Theme color changed to {new_color}[/bold {new_color}]")
+            # messages_log.write(f"[bold {new_color}]Theme color changed to {new_color}[/bold {new_color}]")
+        
+        elif message_type == "bgshift":
+            bg_color = data.get("color", "#000000")
+            await self.change_background_color(bg_color)
         
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
@@ -582,6 +665,21 @@ class ChatScreen(Screen):
         
         # Store the new color in the app for future use
         self.app.theme_color = new_color
+
+    async def change_background_color(self, bg_color: str):
+        """Change the background color of the entire chat interface"""
+        # Apply to root container and message boxes
+        self.styles.background = bg_color
+        header = self.query_one("#header")
+        header.styles.background = bg_color
+        messages_container = self.query_one("#messages_container")
+        messages_container.styles.background = bg_color
+        messages = self.query_one("#messages")
+        messages.styles.background = bg_color
+        input_container = self.query_one("#input_container")
+        input_container.styles.background = bg_color
+        # Optionally, store for later reference
+        self.app.background_color = bg_color
 
 
 class TermchatApp(App):
