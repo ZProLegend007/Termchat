@@ -263,11 +263,15 @@ class ConnectionScreen(Screen):
         indicator_light = self.query_one("#indicator_light")
         indicator_text = self.query_one("#indicator_text")
         if self.server_available:
-            indicator_light.update("●", style="color: #00ff00")  # Green
-            indicator_text.update("Server available.", style="color: #00ff00")
+            indicator_light.update("●")
+            indicator_light.styles.color = "#00ff00"
+            indicator_text.update("Server available.")
+            indicator_text.styles.color = "#00ff00"
         else:
-            indicator_light.update("●", style="color: #ff0000")  # Red
-            indicator_text.update("Server unavailable.", style="color: #ff0000")
+            indicator_light.update("●")
+            indicator_light.styles.color = "#ff0000"
+            indicator_text.update("Server unavailable.")
+            indicator_text.styles.color = "#ff0000"
     
     async def on_input_submitted(self, event: Input.Submitted):
         """Handle Enter key in any input field - navigate to next or connect"""
