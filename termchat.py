@@ -153,7 +153,6 @@ class ConnectionScreen(Screen):
         color: white;
     }
     #hint_row {
-        dock: bottom;
         width: 100%;
         content-align: center middle;
         margin-top: 1;
@@ -184,14 +183,6 @@ class ConnectionScreen(Screen):
     }
     .input:focus {
         border: solid #87CEEB;
-    }
-    #buttons {
-        dock: bottom;
-        layout: horizontal;
-        height: 2;
-        align: center middle;
-        background: black;
-        padding: 0;
     }
     #status_label {
         width: 40;
@@ -235,8 +226,6 @@ class ConnectionScreen(Screen):
                 ),
                 id="hint_row"
             )
-            yield Container(id="buttons")
-
 
     def on_mount(self):
         self.query_one("#username_input").focus()
