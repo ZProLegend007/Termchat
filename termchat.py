@@ -103,7 +103,7 @@ class SplashScreen(Screen):
         yield Static(TERMCHAT_ASCII, id="splash")
 
     def on_mount(self):
-        # Auto-advance to connection dialog after 2 seconds
+        # Auto-advance to connection dialog after 1.25 seconds
         self.set_timer(1.25, self.show_connection)
 
     def show_connection(self):
@@ -215,11 +215,6 @@ class ConnectionScreen(Screen):
             with Container(id="indicator_row"):
                 yield Static("●", id="indicator_light")
                 yield Label("Checking server...", id="indicator_text")
-            with Container(id="hint_row"):
-                yield Label(
-                    "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
-                    markup=True
-                )
             with Container(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
@@ -232,6 +227,15 @@ class ConnectionScreen(Screen):
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
                 with Container(classes="form-row"):
                     yield Label("", id="status_label", classes="label")
+            # HINT ROW MUST COME AFTER THE FORM!
+            yield Container(
+                Label(
+                    "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
+                    markup=True
+                ),
+                id="hint_row"
+            )
+            yield Container(id="buttons")
 
 
     def on_mount(self):
