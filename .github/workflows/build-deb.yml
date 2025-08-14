@@ -102,4 +102,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Termchat
-          path: debbuild/termchat.deb
+          path: debbuild/Termchat.deb
