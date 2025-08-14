@@ -58,6 +58,7 @@ jobs:
 
       - name: Zip Termchat folder 
         run: |
+          cd dist_arm64
           zip -r Termchat-MacOS-arm64.zip Termchat.app
 
       - name: Upload zipped Termchat.app as workflow artifact
