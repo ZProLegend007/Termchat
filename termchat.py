@@ -242,7 +242,7 @@ class ConnectionScreen(Screen):
                 with Container(classes="form-row"):
                     yield Label("", id="status_label", classes="label")
                 with Container(id="buttons"):
-                pass  # Removed command hints as requested
+                    pass  # Removed command hints as requested
 
     def on_mount(self):
         self.query_one("#username_input").focus()
