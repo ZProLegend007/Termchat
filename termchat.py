@@ -249,12 +249,12 @@ class ConnectionScreen(Screen):
         if self.server_available:
             indicator_light.update("●")
             indicator_light.styles.color = "#00ff00"
-            indicator_text.update("Server available.")
+            indicator_text.update("Server available")
             indicator_text.styles.color = "#00ff00"
         else:
             indicator_light.update("●")
             indicator_light.styles.color = "#ff0000"
-            indicator_text.update("Server unavailable.")
+            indicator_text.update("Server unavailable")
             indicator_text.styles.color = "#ff0000"
     
     async def on_input_submitted(self, event: Input.Submitted):
