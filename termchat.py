@@ -152,6 +152,12 @@ class ConnectionScreen(Screen):
         margin-left: 1;
         color: white;
     }
+    #hint_row {
+        dock: bottom;
+        width: 100%;
+        content-align: center middle;
+        margin-top: 1;
+    }
     #form {
         layout: vertical;
         height: auto;
@@ -193,13 +199,6 @@ class ConnectionScreen(Screen):
         color: yellow;
         text-style: bold;
     }
-    #hint_row {
-        dock: bottom;
-        width: 100%;
-        content-align: center middle;
-        margin-top: 1;
-    }
-
     """
     
     BINDINGS = [
@@ -216,11 +215,11 @@ class ConnectionScreen(Screen):
             with Container(id="indicator_row"):
                 yield Static("●", id="indicator_light")
                 yield Label("Checking server...", id="indicator_text")
-                with Container(id="hint_row"):
-                    yield Label(
-                        "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
-                        markup=True
-                    )
+            with Container(id="hint_row"):
+                yield Label(
+                    "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
+                    markup=True
+                )
             with Container(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
