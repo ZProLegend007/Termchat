@@ -43,8 +43,8 @@ jobs:
 
       - name: Install PyInstaller and project requirements
         run: |
-          /usr/local/bin/python3.10 -m pip install --upgrade pip pyinstaller
-          /usr/local/bin/python3.10 -m pip install -r requirements.txt
+          /opt/homebrew/bin/python3.10 -m pip install --upgrade pip pyinstaller
+          /opt/homebrew/bin/python3.10 -m pip install -r requirements.txt
 
       - name: Build x86_64 .app with PyInstaller
         shell: bash
@@ -52,9 +52,9 @@ jobs:
           rm -rf dist_x86_64 build_x86_64
           ICON_PATH="${{ steps.find_icon.outputs.icon_path }}"
           if [ -n "$ICON_PATH" ]; then
-            arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat --icon "$ICON_PATH" termchat.py
+            arch -x86_64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat --icon "$ICON_PATH" termchat.py
           else
-            arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat termchat.py
+            arch -x86_64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat termchat.py
           fi
 
       - name: Build arm64 .app with PyInstaller
