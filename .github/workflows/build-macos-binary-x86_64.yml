@@ -6,7 +6,7 @@ on:
     paths:
       - 'termchat.py'
       - 'requirements.txt'
-      - '.github/workflows/build-macos-binary-x86-64.yml'
+      - '.github/workflows/build-macos-binary-x86_64.yml'
       - 'icons/*'
 
 jobs:
@@ -70,10 +70,11 @@ jobs:
           fi
       - name: Zip Termchat folder 
         run: |
+          cd dist_x86_64
           zip -r Termchat-MacOS-x86_64.zip Termchat.app
 
       - name: Upload zipped Termchat.app as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: Termchat-MacOS-x86_64
-          path: dist_arm64/Termchat-MacOS-x86_64.zip
+          path: dist_x86_64/Termchat-MacOS-x86_64.zip
