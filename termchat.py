@@ -232,6 +232,8 @@ class ConnectionScreen(Screen):
                 with Container(classes="form-row"):
                     yield Label("Password:", classes="label")
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
+                with Container(classes="form-row"):
+                    yield Label("", id="status_label", classes="label")
             with Container(id="hint_row"):
                 yield Label(
                     "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
@@ -239,6 +241,7 @@ class ConnectionScreen(Screen):
                 )
             with Container(id="buttons"):
                 pass  # Removed command hints as requested
+
 
     def on_mount(self):
         self.query_one("#username_input").focus()
