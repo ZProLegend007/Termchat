@@ -119,8 +119,8 @@ class ConnectionScreen(Screen):
     
     CSS = """
     ConnectionScreen {
-        backgroud: black
         content-align: center middle;
+        background: black;
     }
     
     #dialog {
