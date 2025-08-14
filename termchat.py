@@ -222,6 +222,11 @@ class ConnectionScreen(Screen):
             with Container(id="indicator_row"):
                 yield Static("●", id="indicator_light")
                 yield Label("Checking server...", id="indicator_text")
+            with Container(id="indicator_row"):
+                yield Label(
+                    "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
+                    markup=True
+                )
             with Container(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
@@ -234,11 +239,7 @@ class ConnectionScreen(Screen):
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
                 with Container(classes="form-row"):
                     yield Label("", id="status_label", classes="label")
-                with Container(id="form_row"):
-                    yield Label(
-                        "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
-                        markup=True
-                    )
+
 
     def on_mount(self):
         self.query_one("#username_input").focus()
