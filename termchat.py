@@ -222,37 +222,23 @@ class ConnectionScreen(Screen):
             with Container(id="indicator_row"):
                 yield Static("●", id="indicator_light")
                 yield Label("Checking server...", id="indicator_text")
-            # Fix: yield the form container as one block, not just its children!
-            yield Vertical(
-                Container(
-                    Label("Username:", classes="label"),
-                    Input(placeholder="Enter username", id="username_input", classes="input"),
-                    classes="form-row"
-                ),
-                Container(
-                    Label("Chat name:", classes="label"),
-                    Input(placeholder="Enter chat name", id="chatname_input", classes="input"),
-                    classes="form-row"
-                ),
-                Container(
-                    Label("Password:", classes="label"),
-                    Input(placeholder="Enter password", password=True, id="password_input", classes="input"),
-                    classes="form-row"
-                ),
-                Container(
-                    Label("", id="status_label", classes="label"),
-                    classes="form-row"
-                ),
-                id="form"
-            )
-            yield Container(
-                Label(
-                    "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
-                    markup=True
-                ),
-                id="hint_row"
-            )
-            yield Container(id="buttons")
+            with Container(id="form"):
+                with Container(classes="form-row"):
+                    yield Label("Username:", classes="label")
+                    yield Input(placeholder="Enter username", id="username_input", classes="input")
+                with Container(classes="form-row"):
+                    yield Label("Chat name:", classes="label")
+                    yield Input(placeholder="Enter chat name", id="chatname_input", classes="input")
+                with Container(classes="form-row"):
+                    yield Label("Password:", classes="label")
+                    yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
+                with Container(classes="form-row"):
+                    yield Label("", id="status_label", classes="label")
+                with Container(id="form_row"):
+                    yield Label(
+                        "Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
+                        markup=True
+                    )
 
     def on_mount(self):
         self.query_one("#username_input").focus()
