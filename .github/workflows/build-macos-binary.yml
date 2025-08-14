@@ -19,33 +19,18 @@ jobs:
 
       - name: Install Python 3.10 (x86_64) via Homebrew
         run: |
-          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          arch -x86_64 brew install python@3.10
+          arch -x86_64 /usr/local/bin/brew install python@3.10
 
       - name: Install Python 3.10 (arm64) via Homebrew
         run: |
-          arch -arm64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          arch -arm64 brew install python@3.10
-
-      - name: Install PyInstaller for both architectures
-        run: |
-          arch -x86_64 /usr/local/bin/python3.10 -m pip install --upgrade pip pyinstaller
-          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install --upgrade pip pyinstaller
-
-      - name: Install project requirements for both architectures
-        run: |
-          arch -x86_64 /usr/local/bin/python3.10 -m pip install -r requirements.txt
-          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install -r requirements.txt
+          arch -arm64 /opt/homebrew/bin/brew install python@3.10
 
       - name: Find .icns icon file
         id: find_icon
         shell: bash
         run: |
-          ICON_PATH=$(find icons -name '*.icns' | head -n 1 || true)
-          if [ -z "$ICON_PATH" ]; then
-            echo "No .icns icon found in icons/. An icon will not be set."
-          fi
-          echo "icon_path=$ICON_PATH" >> $GITHUB_OUTPUT
+          ICON_PATH=$(find icons -type f -name '*.icns' | head -n 1 || true)
+          echo "icon_path=$ICON_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Generate hidden-import args
         id: gen_hidden_imports
@@ -58,14 +43,24 @@ jobs:
               HIDDEN_IMPORTS="$HIDDEN_IMPORTS --hidden-import $MOD"
             fi
           done < requirements.txt
-          echo "HIDDEN_IMPORTS=$HIDDEN_IMPORTS" >> $GITHUB_ENV
+          echo "HIDDEN_IMPORTS=$HIDDEN_IMPORTS" >> "$GITHUB_ENV"
+
+      - name: Install PyInstaller and project requirements (x86_64)
+        run: |
+          arch -x86_64 /usr/local/bin/python3.10 -m pip install --upgrade pip pyinstaller
+          arch -x86_64 /usr/local/bin/python3.10 -m pip install -r requirements.txt
+
+      - name: Install PyInstaller and project requirements (arm64)
+        run: |
+          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install --upgrade pip pyinstaller
+          arch -arm64 /opt/homebrew/bin/python3.10 -m pip install -r requirements.txt
 
       - name: Build x86_64 .app with PyInstaller
         shell: bash
         run: |
           rm -rf dist_x86_64 build_x86_64
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
-            arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
+            arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat --icon "${{ steps.find_icon.outputs.icon_path}" termchat.py
           else
             arch -x86_64 /usr/local/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_x86_64 --workpath build_x86_64 --name Termchat termchat.py
           fi
@@ -75,7 +70,7 @@ jobs:
         run: |
           rm -rf dist_arm64 build_arm64
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
-            arch -arm64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
+            arch -arm64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat --icon "${{ steps.find_icon.outputs.icon_path}" termchat.py
           else
             arch -arm64 /opt/homebrew/bin/pyinstaller --windowed ${{ env.HIDDEN_IMPORTS }} --distpath dist_arm64 --workpath build_arm64 --name Termchat termchat.py
           fi
@@ -95,8 +90,13 @@ jobs:
           mkdir -p dist/Termchat
           mv dist/Termchat.app dist/Termchat/
 
-      - name: Upload Termchat folder as workflow artifact
+      - name: Zip Termchat folder for artifact
+        run: |
+          cd dist
+          zip -r Termchat-MacOS.zip Termchat
+
+      - name: Upload zipped Termchat folder as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: Termchat-MacOS
-          path: dist/Termchat
+          path: dist/Termchat-MacOS.zip
