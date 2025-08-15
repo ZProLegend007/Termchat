@@ -51,9 +51,9 @@ jobs:
       - name: Build binary with PyInstaller
         run: |
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
-            pyinstaller --onefile $HIDDEN_IMPORTS --name termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
+            pyinstaller --onefile $HIDDEN_IMPORTS --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
           else
-            pyinstaller --onefile $HIDDEN_IMPORTS --name termchat termchat.py
+            pyinstaller --onefile $HIDDEN_IMPORTS --name Termchat termchat.py
           fi
 
       - name: Prepare debian packaging structure
@@ -63,20 +63,20 @@ jobs:
           mkdir -p debbuild/termchat/usr/share/icons/hicolor/256x256/apps
 
           # Copy binary
-          cp dist/termchat debbuild/termchat/usr/bin/termchat
-          chmod +x debbuild/termchat/usr/bin/termchat
+          cp dist/Termchat debbuild/termchat/usr/bin/Termchat
+          chmod +x debbuild/termchat/usr/bin/Termchat
 
           # Optional: Copy icon if exists
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
-            cp "${{ steps.find_icon.outputs.icon_path }}" debbuild/termchat/usr/share/icons/hicolor/256x256/apps/termchat.png
+            cp "${{ steps.find_icon.outputs.icon_path }}" debbuild/termchat/usr/share/icons/hicolor/256x256/apps/Termchat.png
           fi
 
           # Create desktop entry
-          cat <<EOF > debbuild/termchat/usr/share/applications/termchat.desktop
+          cat <<EOF > debbuild/termchat/usr/share/applications/Termchat.desktop
           [Desktop Entry]
           Name=Termchat
-          Exec=termchat
-          Icon=termchat
+          Exec=Termchat
+          Icon=Termchat
           Type=Application
           Categories=Network;Chat;
           EOF
@@ -84,7 +84,7 @@ jobs:
           # Create DEBIAN control files
           mkdir -p debbuild/Termchat/DEBIAN
           cat <<EOF > debbuild/Termchat/DEBIAN/control
-          Package: termchat
+          Package: Termchat
           Version: 1.0.0
           Section: utils
           Priority: optional
