@@ -58,21 +58,21 @@ jobs:
 
       - name: Prepare debian packaging structure
         run: |
-          mkdir -p debbuild/termchat/usr/bin
-          mkdir -p debbuild/termchat/usr/share/applications
-          mkdir -p debbuild/termchat/usr/share/icons/hicolor/256x256/apps
+          mkdir -p debbuild/Termchat/usr/bin
+          mkdir -p debbuild/Termchat/usr/share/applications
+          mkdir -p debbuild/Termchat/usr/share/icons/hicolor/256x256/apps
 
           # Copy binary
-          cp dist/Termchat debbuild/termchat/usr/bin/Termchat
-          chmod +x debbuild/termchat/usr/bin/Termchat
+          cp dist/Termchat debbuild/Termchat/usr/bin/Termchat
+          chmod +x debbuild/Termchat/usr/bin/Termchat
 
           # Optional: Copy icon if exists
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
-            cp "${{ steps.find_icon.outputs.icon_path }}" debbuild/termchat/usr/share/icons/hicolor/256x256/apps/Termchat.png
+            cp "${{ steps.find_icon.outputs.icon_path }}" debbuild/Termchat/usr/share/icons/hicolor/256x256/apps/Termchat.png
           fi
 
           # Create desktop entry
-          cat <<EOF > debbuild/termchat/usr/share/applications/Termchat.desktop
+          cat <<EOF > debbuild/Termchat/usr/share/applications/Termchat.desktop
           [Desktop Entry]
           Name=Termchat
           Exec=Termchat
