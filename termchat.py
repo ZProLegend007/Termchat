@@ -404,8 +404,8 @@ class ChatScreen(Screen):
         self.username = username
         self.chat_name = chat_name
         self.password = password
-        self._last_sent_message = ""    # Stores the last sent message
-        self._recalled = False          # Tracks if recall is active
+        self._last_sent_message = ""    # Stores the last sent message RECALL
+
         
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
@@ -422,7 +422,6 @@ class ChatScreen(Screen):
         input_widget = self.query_one("#message_input")
         input_widget.can_focus = True
         input_widget.focus()
-        input_widget._on_key = self._on_input_key  # Monkey patch key handler
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
@@ -432,13 +431,21 @@ class ChatScreen(Screen):
         user_message = event.value.strip()
         event.input.clear()
 
-        if user_message:
+        if user_message: #RECALL
             self._last_sent_message = user_message
-            self._recalled = False
         
         if not user_message:
             return
             
+        # RECALL
+        async def on_key(self, event):
+        # Only handle up arrow for recall if focus is in message_input
+        input_widget = self.query_one("#message_input")
+        if event.key == "up" and input_widget.has_focus:
+            if self._last_sent_message:
+                input_widget.value = self._last_sent_message
+                input_widget.cursor_position = len(self._last_sent_message)
+        
         # Handle clear command
         if user_message.lower() in ['/clear','/c']:
             messages_log = self.query_one("#messages", RichLog)
@@ -456,23 +463,6 @@ class ChatScreen(Screen):
     def action_quit(self):
         self.app.action_quit()
 
-    def _on_input_key(self, event):
-        input_widget = self.query_one("#message_input")
-        # Up arrow: recall last sent
-        if event.key == "up":
-            if self._last_sent_message and not self._recalled:
-                input_widget.value = self._last_sent_message
-                self._recalled = True
-                input_widget.cursor_position = len(self._last_sent_message)
-        # Down arrow: clear recall if active
-        elif event.key == "down":
-            if self._recalled:
-                input_widget.value = ""
-                self._recalled = False
-        else:
-            # Pass through to normal key handler if defined
-            if hasattr(Input, "_on_key"):
-                Input._on_key(input_widget, event)
 
     async def connect_to_server(self):
         # Establish WebSocket connection to the backend
