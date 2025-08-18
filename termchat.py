@@ -582,6 +582,8 @@ class ChatScreen(Screen):
             else:
                 user_color = self.app.get_user_color(username)
                 messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
+
+            await self.animate_message(text, messages_log)
         
         elif message_type == "join":
             username = data.get("username", "Unknown")
@@ -687,6 +689,22 @@ class ChatScreen(Screen):
         input_container.styles.background = bg_color
         # Optionally, store for later reference
         self.app.background_color = bg_color
+
+    async def animate_message(self, text: str, messages_log: RichLog):
+        # Create a Static widget for animation
+        anim = Static(text, markup=True)
+        anim.styles.opacity = 0
+        anim.styles.offset = (-40, 0)  # start off-screen left
+
+        messages_log.mount(anim)
+
+        # Animate slide-in and fade-in simultaneously
+        await animate(anim, "opacity", value=1, duration=0.5)
+        await animate(anim, "offset", value=(0, 0), duration=0.5)
+
+        # After animation, convert Static to a normal RichLog entry and remove anim widget
+        messages_log.write(text)
+        await anim.remove()
 
 
 class TermchatApp(App):
