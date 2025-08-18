@@ -179,9 +179,7 @@ class ConnectionScreen(Screen):
         margin-left: 1;
         color: white;
     }
-    #general_count_label {
-        content-align: center middle;
-    }
+
     #hint_row {
         width: 100%;
         content-align: center middle;
@@ -243,7 +241,6 @@ class ConnectionScreen(Screen):
                 ),
                 id="hint_row"
             )
-            yield Label("", id="general_count_label")
             with Container(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
@@ -256,6 +253,7 @@ class ConnectionScreen(Screen):
                     yield Input(placeholder="Enter password", password=True, id="password_input", classes="input")
                 with Container(classes="form-row"):
                     yield Label("", id="status_label", classes="label")
+        yield Label("", id="general_count_label")
 
     def on_mount(self):
         self.query_one("#username_input").focus()
