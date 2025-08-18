@@ -15,6 +15,7 @@ from textual.widgets import Input, RichLog, Static, Label
 from textual.binding import Binding
 from textual.screen import Screen
 from rich.markup import escape
+from rich.text import Text
 import os
 import platform
 import subprocess
@@ -693,23 +694,56 @@ class ChatScreen(Screen):
         self.app.background_color = bg_color
 
     async def animate_message(self, text: str, messages_log: RichLog):
-        # Create Static widget for animation
-        anim = Static(text, markup=True)
-        anim.styles.offset = (-40, 0)
-        anim.styles.opacity = 0
-
-        # Mount to the screen (not RichLog!)
-        await self.mount(anim)
-
-        # Animate both slide-in and fade-in simultaneously
-        await asyncio.gather(
-            anim.animate("offset", (0, 0), duration=0.4),
-            anim.animate("opacity", 1, duration=0.4)
-        )
-
-        # After animation, write to RichLog and remove the animated widget
-        messages_log.write(text)
-        await anim.remove()
+        # Ensure we have a messages_log
+        if messages_log is None:
+            messages_log = self.query_one("#messages", RichLog)
+    
+        # Choose where to mount the temporary animated widget.
+        # Prefer the messages container so it appears in the chat area.
+        try:
+            parent = self.query_one("#messages_container")
+        except Exception:
+            parent = self  # fallback to screen if container not found
+    
+        # Convert the markup string to a rich.Text object to preserve colors/styles.
+        base_text = Text.from_markup(text)
+    
+        # Create a Static to show the animating message (renderable is a Text object).
+        anim = Static("", markup=False)
+    
+        # Mount the anim widget into the messages container (await mount to ensure widget exists).
+        await parent.mount(anim)
+    
+        # Animation parameters (tune these if you want faster/slower or further slide)
+        max_indent = 12     # how many leading spaces at start (controls slide distance)
+        steps = 10          # number of frames
+        frame_delay = 0.03  # seconds between frames (~30ms)
+    
+        try:
+            for step in range(steps, -1, -1):
+                # Compute current indent (spaces) for sliding from left
+                indent = int((step / steps) * max_indent)
+    
+                # Compose the visible Text for this frame: leading spaces + message
+                frame_text = Text(" " * indent) + base_text
+    
+                # Apply a simple fade simulation: start dim, become normal near the end.
+                # This will 'dim' the entire line early in the animation, then remove dimming.
+                if step > int(steps * 0.5):
+                    frame_text.stylize("dim")
+                # Update anim widget renderable for this frame
+                anim.update(frame_text)
+    
+                # Small sleep to produce the animation effect
+                await asyncio.sleep(frame_delay)
+    
+        except asyncio.CancelledError:
+            # If the screen/app is shutting down, ensure we don't crash
+            pass
+        finally:
+            # Write the real (markup) message to the RichLog and remove animation widget
+            messages_log.write(text)
+            await anim.remove()
 
 class TermchatApp(App):
     # Main Termchat application using proper screen management
