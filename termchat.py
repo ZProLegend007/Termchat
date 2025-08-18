@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+t#!/usr/bin/env python3
 
 # Termchat - Cross-platform Python terminal client for real-time chat
 # Connects to termchat-backend via HTTPS WebSocket on port 443
@@ -693,19 +693,20 @@ class ChatScreen(Screen):
         self.app.background_color = bg_color
 
     async def animate_message(self, text: str, messages_log: RichLog):
-        # Create a Static widget for animation
         from textual.widgets import Static
         anim = Static(text, markup=True)
-        anim.styles.opacity = 0
-        anim.styles.offset = (-40, 0)  # start off-screen left
-    
+        # Only set styles if attributes exist (foolproof for all Textual versions)
+        if hasattr(anim.styles, "opacity"):
+            anim.styles.opacity = 0
+        if hasattr(anim.styles, "offset"):
+            anim.styles.offset = (-40, 0)
         await messages_log.mount(anim)
-    
-        # Animate slide-in and fade-in simultaneously
-        await anim.animate("opacity", 1, duration=0.5)
-        await anim.animate("offset", (0, 0), duration=0.5)
-    
-        # After animation, convert Static to a normal RichLog entry and remove anim widget
+        # Animate only if supported
+        if hasattr(anim, "animate"):
+            if hasattr(anim.styles, "opacity"):
+                await anim.animate("opacity", 1, duration=0.5)
+            if hasattr(anim.styles, "offset"):
+                await anim.animate("offset", (0, 0), duration=0.5)
         messages_log.write(text)
         await anim.remove()
 
