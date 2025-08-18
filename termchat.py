@@ -1,4 +1,4 @@
-t#!/usr/bin/env python3
+#!/usr/bin/env python3
 
 # Termchat - Cross-platform Python terminal client for real-time chat
 # Connects to termchat-backend via HTTPS WebSocket on port 443
