@@ -170,6 +170,9 @@ class ConnectionScreen(Screen):
         margin-left: 1;
         color: white;
     }
+    #general_count_label {
+        content-align: center middle;
+    }
     #hint_row {
         width: 100%;
         content-align: center middle;
@@ -254,7 +257,7 @@ class ConnectionScreen(Screen):
         count = await get_general_count(self.app.server_url)
         self.general_count = count
         label = self.query_one("#general_count_label")
-        label.update(f"[#90ee90]{count}[/#90ee90] users in general chat")
+        label.update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
     async def check_server_status(self):
         # Foolproof: check server reachability (simple websocket ping or http GET)
