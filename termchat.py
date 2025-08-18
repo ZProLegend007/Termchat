@@ -440,11 +440,11 @@ class ChatScreen(Screen):
         # RECALL
         async def on_key(self, event):
         # Only handle up arrow for recall if focus is in message_input
-        input_widget = self.query_one("#message_input")
-        if event.key == "up" and input_widget.has_focus:
-            if self._last_sent_message:
-                input_widget.value = self._last_sent_message
-                input_widget.cursor_position = len(self._last_sent_message)
+            input_widget = self.query_one("#message_input")
+            if event.key == "up" and input_widget.has_focus:
+                if self._last_sent_message:
+                    input_widget.value = self._last_sent_message
+                    input_widget.cursor_position = len(self._last_sent_message)
         
         # Handle clear command
         if user_message.lower() in ['/clear','/c']:
