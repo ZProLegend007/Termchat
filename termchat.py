@@ -693,20 +693,31 @@ class ChatScreen(Screen):
         self.app.background_color = bg_color
 
     async def animate_message(self, text: str, messages_log: RichLog):
-        from textual.widgets import Static
+        # Always check messages_log is not None
+        if messages_log is None:
+            messages_log = self.query_one("#messages", RichLog)
+
+        # Create a Static widget for animation
         anim = Static(text, markup=True)
-        # Only set styles if attributes exist (foolproof for all Textual versions)
-        if hasattr(anim.styles, "opacity"):
-            anim.styles.opacity = 0
-        if hasattr(anim.styles, "offset"):
+        try:
             anim.styles.offset = (-40, 0)
-        await messages_log.mount(anim)
-        # Animate only if supported
-        if hasattr(anim, "animate"):
-            if hasattr(anim.styles, "opacity"):
-                await anim.animate("opacity", 1, duration=0.5)
-            if hasattr(anim.styles, "offset"):
-                await anim.animate("offset", (0, 0), duration=0.5)
+            anim.styles.opacity = 0
+        except Exception:
+            pass  # If not supported, just continue
+
+        # Mount the animated widget directly to the screen
+        await self.mount(anim)
+
+        # Animate slide-in and fade-in simultaneously if supported
+        try:
+            await asyncio.gather(
+                anim.animate("offset", (0, 0), duration=0.4),
+                anim.animate("opacity", 1, duration=0.4)
+            )
+        except Exception:
+            pass  # If animation not supported, just continue
+
+        # After animation, write message to log and remove anim widget
         messages_log.write(text)
         await anim.remove()
 
