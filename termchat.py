@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""
-Termchat - Cross-platform Python terminal client for real-time chat
-Connects to termchat-backend via HTTPS WebSocket on port 443
-"""
+
+# Termchat - Cross-platform Python terminal client for real-time chat
+# Connects to termchat-backend via HTTPS WebSocket on port 443
 
 import asyncio
 import websockets
@@ -24,11 +23,11 @@ import aiohttp
 
 
 def is_in_terminal():
-    """Heuristically check if we're running in a real terminal."""
+    # Heuristically check if we're running in a real terminal.
     return sys.stdin.isatty()
 
 def launch_new_terminal():
-    """Attempt to launch a new terminal window running this script."""
+    # Attempt to launch a new terminal window running this script.
     script_path = os.path.abspath(__file__)
 
     if platform.system() == "Windows":
@@ -107,7 +106,7 @@ TERMCHAT_ASCII = """
 """
 
 class SplashScreen(Screen):
-    """ASCII Art splash screen shown for 2 seconds"""
+# ASCII Art splash screen shown for 2 seconds
     
     CSS = """
     SplashScreen {
@@ -137,7 +136,7 @@ class SplashScreen(Screen):
 
 
 class ConnectionScreen(Screen):
-    """Modal screen for connection details"""
+    # Modal screen for connection details 
     
     def __init__(self):
         super().__init__()
@@ -181,7 +180,7 @@ class ConnectionScreen(Screen):
         color: white;
     }
     #general_count_label {
-        align: center middle;
+        content-align: center middle;
     }
     #hint_row {
         width: 100%;
@@ -295,7 +294,7 @@ class ConnectionScreen(Screen):
             indicator_text.styles.color = "#ff0000"
     
     async def on_input_submitted(self, event: Input.Submitted):
-        """Handle Enter key in any input field - navigate to next or connect"""
+        # Handle Enter key in any input field - navigate to next or connect
         if event.input.id == "username_input":
             self.query_one("#chatname_input").focus()
         elif event.input.id == "chatname_input":
@@ -340,7 +339,7 @@ class ConnectionScreen(Screen):
 
 
 class ChatScreen(Screen):
-    """Main chat screen"""
+    # Main chat screen
     
     CSS = """
     ChatScreen {
@@ -418,7 +417,7 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        """Initialize the chat screen"""
+        # Initialize the chat screen
         # Start connection to server
         await self.connect_to_server()
          # Bind arrow keys for recall
@@ -428,7 +427,7 @@ class ChatScreen(Screen):
         input_widget._on_key = self._on_input_key  # Monkey patch key handler
 
     async def on_input_submitted(self, event: Input.Submitted):
-        """Handle user message input"""
+        # Handle user message input
         if event.input.id != "message_input":
             return
             
@@ -478,7 +477,7 @@ class ChatScreen(Screen):
                 Input._on_key(input_widget, event)
 
     async def connect_to_server(self):
-        """Establish WebSocket connection to the backend"""
+        # Establish WebSocket connection to the backend
         messages_log = self.query_one("#messages", RichLog)
         
         try:
@@ -569,7 +568,7 @@ class ChatScreen(Screen):
             self.app.pop_screen()
 
     async def listen_for_messages(self):
-        """Listen for incoming messages from the server"""
+        # Listen for incoming messages from the server
         messages_log = self.query_one("#messages", RichLog)
         
         try:
@@ -595,7 +594,7 @@ class ChatScreen(Screen):
             self.app.connected = False
 
     async def handle_message(self, data):
-        """Handle different types of messages from the server"""
+        # Handle different types of messages from the server
         messages_log = self.query_one("#messages", RichLog)
         message_type = data.get("type", "")
         
@@ -663,7 +662,7 @@ class ChatScreen(Screen):
             self.app.pop_screen()
 
     async def send_message(self, user_message: str):
-        """Send message to server"""
+        # Send message to server
         if self.app.websocket and self.app.connected:
             try:
                 message_data = {
@@ -684,7 +683,7 @@ class ChatScreen(Screen):
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
     async def change_theme_color(self, new_color: str):
-        """Change the theme color of the interface"""
+        # Change the theme color of the interface
         # Update the header widget style
         header = self.query_one("#header")
         header.styles.color = new_color
@@ -701,7 +700,7 @@ class ChatScreen(Screen):
         self.app.theme_color = new_color
 
     async def change_background_color(self, bg_color: str):
-        """Change the background color of the entire chat interface"""
+        # Change the background color of the entire chat interface
         # Apply to root container and message boxes
         self.styles.background = bg_color
         header = self.query_one("#header")
@@ -717,7 +716,7 @@ class ChatScreen(Screen):
 
 
 class TermchatApp(App):
-    """Main Termchat application using proper screen management"""
+    # Main Termchat application using proper screen management
 
     SCREENS = {
         "splash": SplashScreen,
@@ -736,16 +735,16 @@ class TermchatApp(App):
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
 
     def on_mount(self):
-        """Start with the splash screen"""
+        # Start with the splash screen
         self.push_screen("splash")
 
     def start_chat(self, username: str, chat_name: str, password: str):
-        """Start the chat with the given credentials"""
+        # Start the chat with the given credentials
         chat_screen = ChatScreen(username, chat_name, password)
         self.push_screen(chat_screen)
 
     def get_user_color(self, username: str) -> str:
-        """Get or assign a color for a username"""
+        # Get or assign a color for a username
         if username.lower() == "server":
             return "bold #87CEEB"
         
@@ -756,7 +755,7 @@ class TermchatApp(App):
         return self.user_colors[username]
 
     async def action_quit(self):
-        """Quit the application"""
+        # Quit the application
         if self.websocket:
             try:
                 await self.websocket.close()
@@ -766,7 +765,7 @@ class TermchatApp(App):
 
 
 async def main():
-    """Entry point for the application"""
+    # Entry point for the application
     app = TermchatApp()
     await app.run_async()
 
