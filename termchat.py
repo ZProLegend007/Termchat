@@ -9,6 +9,7 @@ import json
 import sys
 import certifi
 from typing import Optional
+from textual.animation import animate
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
 from textual.widgets import Input, RichLog, Static, Label
@@ -578,10 +579,10 @@ class ChatScreen(Screen):
             
             # Display messages with proper formatting - show ALL messages including own
             if username == "Server":
-                messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
+                text = (f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
             else:
                 user_color = self.app.get_user_color(username)
-                messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
+                text = (f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
 
             await self.animate_message(text, messages_log)
         
@@ -589,14 +590,16 @@ class ChatScreen(Screen):
             username = data.get("username", "Unknown")
             # Handle other users joining - server doesn't send join notifications back to joining user
             if username and username != self.username:
-                messages_log.write(f"[bold #87CEEB]A wild {escape(username)} has appeared.[/bold #87CEEB]")
-        
+                text = (f"[bold #87CEEB]A wild {escape(username)} has appeared.[/bold #87CEEB]")
+                await self.animate_message(text, messages_log)
+
         elif message_type == "leave":
             username = data.get("username", "Unknown") 
             # Show leave notifications for all users
             if username and username != self.username:
-                messages_log.write(f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
-        
+                text = (f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
+                await self.animate_message(text, messages_log)
+
         elif message_type == "colourshift":
             # Handle theme color change
             new_color = data.get("color", "#87CEEB")
