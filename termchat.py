@@ -171,7 +171,7 @@ class ConnectionScreen(Screen):
         color: white;
     }
     #general_count_label {
-        content-align: center middle;
+        align: center middle;
     }
     #hint_row {
         width: 100%;
@@ -182,7 +182,7 @@ class ConnectionScreen(Screen):
         layout: vertical;
         height: auto;
         margin: 2;
-        padding: 2;
+        padding: 1;
     }
     .form-row {
         height: 3;
@@ -229,7 +229,7 @@ class ConnectionScreen(Screen):
                 yield Label("Checking server...", id="indicator_text")
             yield Container(
                 Label(
-                    "       Keep the chat name and password blank to join the [#90ee90]general chat[/#90ee90]",
+                    "       Keep the [#333333]chat name[/#333333] and [#333333]password[/#333333] blank to join the [#90ee90]general chat[/#90ee90]",
                     markup=True
                 ),
                 id="hint_row"
