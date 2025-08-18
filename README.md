@@ -15,7 +15,7 @@ Cross-platform Python terminal chat client. Tons of fun features, easy to use, a
 
 ## Installation
 
-Binaries have been released! Check the releases tab for the downloads!
+The latest update for Termchat will always be in the Releases page on the right.
 
 No installation necessary. It's completely portable!
 
