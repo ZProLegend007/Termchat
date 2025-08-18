@@ -404,7 +404,6 @@ class ChatScreen(Screen):
         self.username = username
         self.chat_name = chat_name
         self.password = password
-        self._last_sent_message = ""    # Stores the last sent message RECALL
 
         
     def compose(self) -> ComposeResult:
@@ -418,7 +417,6 @@ class ChatScreen(Screen):
         # Initialize the chat screen
         # Start connection to server
         await self.connect_to_server()
-         # Bind arrow keys for recall
         input_widget = self.query_one("#message_input")
         input_widget.can_focus = True
         input_widget.focus()
@@ -431,20 +429,8 @@ class ChatScreen(Screen):
         user_message = event.value.strip()
         event.input.clear()
 
-        if user_message: #RECALL
-            self._last_sent_message = user_message
-        
         if not user_message:
             return
-            
-        # RECALL
-        async def on_key(self, event):
-        # Only handle up arrow for recall if focus is in message_input
-            input_widget = self.query_one("#message_input")
-            if event.key == "up" and input_widget.has_focus:
-                if self._last_sent_message:
-                    input_widget.value = self._last_sent_message
-                    input_widget.cursor_position = len(self._last_sent_message)
         
         # Handle clear command
         if user_message.lower() in ['/clear','/c']:
