@@ -20,6 +20,8 @@ import os
 import platform
 import subprocess
 import shlex
+import aiohttp
+
 
 def is_in_terminal():
     """Heuristically check if we're running in a real terminal."""
@@ -64,6 +66,20 @@ def launch_new_terminal():
         print("Unsupported OS.")
         sys.exit(1)
         
+async def get_general_count(server_url: str) -> int:
+    # Converts wss://... to https://... and gets /general-count
+    http_url = server_url.replace("wss://", "https://").split("/")[2]
+    endpoint = f"https://{http_url}/general-count"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(endpoint, timeout=3) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("userCount", 0)
+    except Exception:
+        pass
+    return 0
+
 # User colors for cycling through usernames
 USER_COLORS = [
     "red", "green", "yellow", "magenta", 
@@ -105,7 +121,7 @@ class SplashScreen(Screen):
     def on_mount(self):
         # Auto-advance to connection dialog after 1.25 seconds
         self.set_timer(1.25, self.show_connection)
-
+        
     def show_connection(self):
         self.app.push_screen("connection")
 
@@ -116,7 +132,8 @@ class ConnectionScreen(Screen):
     def __init__(self):
         super().__init__()
         self.connecting = False
-    
+        self.general_count = None
+        
     CSS = """
     ConnectionScreen {
         align: center middle;
@@ -214,6 +231,7 @@ class ConnectionScreen(Screen):
                 ),
                 id="hint_row"
             )
+            yield Label("", id="general_count_label")
             with Container(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
@@ -230,6 +248,13 @@ class ConnectionScreen(Screen):
     def on_mount(self):
         self.query_one("#username_input").focus()
         self.set_timer(0.1, self.check_server_status)
+        asyncio.create_task(self.update_general_count())
+
+    async def update_general_count(self):
+        count = await get_general_count(self.app.server_url)
+        self.general_count = count
+        label = self.query_one("#general_count_label")
+        label.update(f"[#90ee90]{count}[/#90ee90] users in general chat")
 
     async def check_server_status(self):
         # Foolproof: check server reachability (simple websocket ping or http GET)
