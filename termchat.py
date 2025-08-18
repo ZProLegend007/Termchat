@@ -9,7 +9,6 @@ import json
 import sys
 import certifi
 from typing import Optional
-from textual.animation import animate
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
 from textual.widgets import Input, RichLog, Static, Label
@@ -695,16 +694,17 @@ class ChatScreen(Screen):
 
     async def animate_message(self, text: str, messages_log: RichLog):
         # Create a Static widget for animation
+        from textual.widgets import Static
         anim = Static(text, markup=True)
         anim.styles.opacity = 0
         anim.styles.offset = (-40, 0)  # start off-screen left
-
-        messages_log.mount(anim)
-
+    
+        await messages_log.mount(anim)
+    
         # Animate slide-in and fade-in simultaneously
-        await animate(anim, "opacity", value=1, duration=0.5)
-        await animate(anim, "offset", value=(0, 0), duration=0.5)
-
+        await anim.animate("opacity", 1, duration=0.5)
+        await anim.animate("offset", (0, 0), duration=0.5)
+    
         # After animation, convert Static to a normal RichLog entry and remove anim widget
         messages_log.write(text)
         await anim.remove()
