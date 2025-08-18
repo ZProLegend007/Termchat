@@ -693,34 +693,23 @@ class ChatScreen(Screen):
         self.app.background_color = bg_color
 
     async def animate_message(self, text: str, messages_log: RichLog):
-        # Always check messages_log is not None
-        if messages_log is None:
-            messages_log = self.query_one("#messages", RichLog)
-
-        # Create a Static widget for animation
+        # Create Static widget for animation
         anim = Static(text, markup=True)
-        try:
-            anim.styles.offset = (-40, 0)
-            anim.styles.opacity = 0
-        except Exception:
-            pass  # If not supported, just continue
+        anim.styles.offset = (-40, 0)
+        anim.styles.opacity = 0
 
-        # Mount the animated widget directly to the screen
+        # Mount to the screen (not RichLog!)
         await self.mount(anim)
 
-        # Animate slide-in and fade-in simultaneously if supported
-        try:
-            await asyncio.gather(
-                anim.animate("offset", (0, 0), duration=0.4),
-                anim.animate("opacity", 1, duration=0.4)
-            )
-        except Exception:
-            pass  # If animation not supported, just continue
+        # Animate both slide-in and fade-in simultaneously
+        await asyncio.gather(
+            anim.animate("offset", (0, 0), duration=0.4),
+            anim.animate("opacity", 1, duration=0.4)
+        )
 
-        # After animation, write message to log and remove anim widget
+        # After animation, write to RichLog and remove the animated widget
         messages_log.write(text)
         await anim.remove()
-
 
 class TermchatApp(App):
     # Main Termchat application using proper screen management
