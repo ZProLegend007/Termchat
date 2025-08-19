@@ -42,12 +42,26 @@ def launch_new_terminal():
 
     elif platform.system() == "Darwin":
         python = shlex.quote(sys.executable)
+        # Set bounds for the window (pixels)
         left, top = 100, 100
         right, bottom = left + 912, top + 520
+    
+        # Launch the script in Terminal, reusing the same window if one already exists.
+        # If no Terminal windows exist, this creates one and sets bounds.
         applescript = f'''
-        tell application "Terminal" to do script "{python} {script_path}"
+        tell application "Terminal"
             activate
-            set bounds of front window to {{{left}, {top}, {right}, {bottom}}}
+            if (count of windows) = 0 then
+                -- no windows: create a new window and run the command
+                set theResult to do script "{python} {script_path}"
+                delay 0.12
+                try
+                    set bounds of front window to {{{left}, {top}, {right}, {bottom}}}
+                end try
+            else
+                -- there is an existing window: run in the front window (creates a new tab in that window)
+                do script "{python} {script_path}" in front window
+            end if
         end tell
         '''
         cmd = f'osascript -e {shlex.quote(applescript)}'
@@ -75,11 +89,13 @@ def launch_new_terminal():
         sys.exit(1)
         
 async def get_general_count(server_url: str) -> int:
-    # Converts wss://... to https://... and gets /general-count
-    http_url = server_url.replace("wss://", "https://").split("/")[2]
-    endpoint = f"https://{http_url}/general-count"
+    # Converts wss://... to https://... and gets /general-count using certifi-backed SSL.
+    http_host = server_url.replace("wss://", "https://").split("/")[2]
+    endpoint = f"https://{http_host}/general-count"
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
     try:
-        async with aiohttp.ClientSession() as session:
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        async with aiohttp.ClientSession(connector=connector) as session:
             async with session.get(endpoint, timeout=3) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -266,15 +282,17 @@ class ConnectionScreen(Screen):
         label.update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
     async def check_server_status(self):
-        # Foolproof: check server reachability (simple websocket ping or http GET)
-        import websockets
-        try:
-            ws = await websockets.connect(self.app.server_url, ping_timeout=2)
-            await ws.close()
-            self.server_available = True
-        except Exception:
-            self.server_available = False
-        self.update_indicator()
+    # Foolproof: check server reachability using a certifi-backed SSL context
+    try:
+        import websockets  # keep local import if desired
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        # short timeout/ping to keep this check fast
+        ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
+        await ws.close()
+        self.server_available = True
+    except Exception:
+        self.server_available = False
+    self.update_indicator()
 
     def update_indicator(self):
         indicator_light = self.query_one("#indicator_light")
