@@ -403,12 +403,48 @@ class ConnectionScreen(Screen):
         
         # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
         try:
-            self.app.start_chat(username, chat_name, password)
+            await self.fade_to_chat(username, chat_name, password)
         except Exception as e:
             # Connection failed, show error and reset
             self.connecting = False
             status_label.update(f"[red]Connection failed: {str(e)}[/red]")
             self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
+
+    async def fade_to_chat(self, username: str, chat_name: str, password: str):
+        # Fade out self, then fade in chat screen
+        duration = 0.5
+        frames = 20
+        container = self  # the ConnectionScreen itself
+        # Fade out animation
+        for i in range(frames + 1):
+            t = i / frames
+            opacity = 1.0 - t
+            try:
+                container.styles.opacity = opacity
+            except Exception:
+                break
+            await asyncio.sleep(duration / frames)
+        # Actually switch screens
+        chat_screen = ChatScreen(username, chat_name, password)
+        self.app.push_screen(chat_screen)
+        await asyncio.sleep(0.05)
+        # Fade in animation (on chat_screen)
+        try:
+            chat_screen.styles.opacity = 0.0
+        except Exception:
+            return
+        for i in range(frames + 1):
+            t = i / frames
+            opacity = t
+            try:
+                chat_screen.styles.opacity = opacity
+            except Exception:
+                break
+            await asyncio.sleep(duration / frames)
+        try:
+            chat_screen.styles.opacity = 1.0
+        except Exception:
+            pass
 
 
     def action_quit(self):
