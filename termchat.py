@@ -403,7 +403,13 @@ class ConnectionScreen(Screen):
             chat_name = "general"
         if not password:
             password = "default"
-
+        
+        def ease_out_expo(t: float) -> float:
+            if t >= 1.0:
+                return 1.0
+            # 1 - 2^(-10t) gives a very noticeable ease out
+            return 1 - pow(2, -20 * t)
+            
         # Immediate visual feedback: animate dialog (quick slide up + fade out)
         dialog = self.query_one("#dialog")
         duration_out = 0.28
