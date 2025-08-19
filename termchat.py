@@ -693,6 +693,7 @@ class ChatScreen(Screen):
         # Optionally, store for later reference
         self.app.background_color = bg_color
 
+    @staticmethod
     def ease_out(t):
         # Ease-out cubic for natural finish
         return 1 - pow(1 - t, 3)
