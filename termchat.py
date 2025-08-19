@@ -164,12 +164,12 @@ class SplashScreen(Screen):
             if t >= 1.0:
                 return 1.0
             # 1 - 2^(-10t) gives a very noticeable ease out
-            return 1 - pow(2, -10 * t)
+            return 1 - pow(2, -20 * t)
 
         # Animation parameters
-        duration = 1   # seconds (long enough to notice)
-        frames = 36       # smoothness
-        start_offset_y =   25  # start a few rows lower (slides up to 0)
+        duration = 1.2   # seconds (long enough to notice)
+        frames = 40       # smoothness
+        start_offset_y =  22  # start a few rows lower (slides up to 0)
         
         # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
         use_styles = True
