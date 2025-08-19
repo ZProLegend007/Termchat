@@ -7,6 +7,7 @@ import asyncio
 import websockets
 import json
 import sys
+import ssl
 import certifi
 from typing import Optional
 from textual.app import App, ComposeResult
