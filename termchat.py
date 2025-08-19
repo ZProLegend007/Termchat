@@ -121,7 +121,7 @@ TERMCHAT_ASCII = """
 """
 
 class SplashScreen(Screen):
-# ASCII Art splash screen shown for 2 seconds
+    # ASCII Art splash screen shown with a slide-up + fade-in animation
     
     CSS = """
     SplashScreen {
@@ -140,12 +140,75 @@ class SplashScreen(Screen):
     """
 
     def compose(self) -> ComposeResult:
+        # Create the Static so we can animate it in on_mount.
         yield Static(TERMCHAT_ASCII, id="splash")
 
     def on_mount(self):
-        # Auto-advance to connection dialog after 1.25 seconds
-        self.set_timer(1.25, self.show_connection)
+        # Start the splash animation asynchronously and advance when done.
+        asyncio.create_task(self._animate_and_advance())
+
+    async def _animate_and_advance(self):
+        """
+        Animate the splash logo: slide up from below and fade in with a strong ease-out.
+        After the animation completes we wait a short moment then move to the connection screen.
+        """
+        # Query the splash widget
+        try:
+            splash = self.query_one("#splash", Static)
+        except Exception:
+            # Fallback: if widget isn't present, just advance
+            self.show_connection()
+            return
+
+        # Strong ease-out function (exponential) for a noticeable fast-then-slow effect
+        def ease_out_expo(t: float) -> float:
+            if t >= 1.0:
+                return 1.0
+            # 1 - 2^(-10t) gives a very noticeable ease out
+            return 1 - pow(2, -10 * t)
+
+        # Animation parameters
+        duration = 0.95   # seconds (long enough to notice)
+        frames = 36       # smoothness
+        start_offset_y = 6  # start a few rows lower (slides up to 0)
         
+        # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
+        use_styles = True
+        try:
+            # initialize
+            splash.styles.opacity = 0.0
+            splash.styles.offset = (0, start_offset_y)
+        except Exception:
+            use_styles = False
+
+        if use_styles:
+            for i in range(frames + 1):
+                t = i / frames
+                eased = ease_out_expo(t)
+                y = int(start_offset_y * (1 - eased))
+                opacity = float(eased)
+                try:
+                    splash.styles.offset = (0, y)
+                    splash.styles.opacity = opacity
+                except Exception:
+                    # If styles stop working mid-animation, break out and finalize.
+                    break
+                await asyncio.sleep(duration / frames)
+
+            # Ensure final exact values
+            try:
+                splash.styles.offset = (0, 0)
+                splash.styles.opacity = 1.0
+            except Exception:
+                pass
+        else:
+            # Fallback: simple timed pause so the splash is visible, without animation.
+            await asyncio.sleep(duration)
+
+        # Short pause so the user sees the final state, then advance to connection screen.
+        await asyncio.sleep(0.25)
+        self.show_connection()
+
     def show_connection(self):
         self.app.push_screen("connection")
 
