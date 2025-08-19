@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+f#!/usr/bin/env python3
 
 # Termchat - Cross-platform Python terminal client for real-time chat
 # Connects to termchat-backend via HTTPS WebSocket on port 443
@@ -715,7 +715,7 @@ class ChatScreen(Screen):
         frames = 16
         for i in range(frames + 1):
             t = i / frames
-            eased = ease_out(t)
+            eased = self.ease_out(t)
             # Slide from -40 to 0
             anim.styles.offset = (int(-40 * (1 - eased)), 0)
             # Fade from 0 to 1
