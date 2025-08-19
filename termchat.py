@@ -42,13 +42,11 @@ def launch_new_terminal():
 
     elif platform.system() == "Darwin":
         python = shlex.quote(sys.executable)
-        # Set bounds to 1/5th of typical screen size (e.g., 2560x1600 → 512x320)
         left, top = 100, 100
-        right, bottom = left + 512, top + 320
+        right, bottom = left + 912, top + 520
         applescript = f'''
-        tell application "Terminal"
+        tell application "Terminal" to do script "{python} {script_path}"
             activate
-            set newWindow to do script "{python} {script_path}"
             set bounds of front window to {{{left}, {top}, {right}, {bottom}}}
         end tell
         '''
