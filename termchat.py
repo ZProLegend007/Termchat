@@ -148,10 +148,9 @@ class SplashScreen(Screen):
         asyncio.create_task(self._animate_and_advance())
 
     async def _animate_and_advance(self):
-        """
-        Animate the splash logo: slide up from below and fade in with a strong ease-out.
-        After the animation completes we wait a short moment then move to the connection screen.
-        """
+
+        # Animate the splash logo: slide up from below and fade in with a strong ease-out.
+        # After the animation completes we wait a short moment then move to the connection screen.
         # Query the splash widget
         try:
             splash = self.query_one("#splash", Static)
@@ -168,9 +167,9 @@ class SplashScreen(Screen):
             return 1 - pow(2, -10 * t)
 
         # Animation parameters
-        duration = 0.95   # seconds (long enough to notice)
+        duration = 1   # seconds (long enough to notice)
         frames = 36       # smoothness
-        start_offset_y = 6  # start a few rows lower (slides up to 0)
+        start_offset_y =   25  # start a few rows lower (slides up to 0)
         
         # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
         use_styles = True
