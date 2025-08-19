@@ -168,8 +168,8 @@ class SplashScreen(Screen):
 
         # Animation parameters
         duration = 1.2   # seconds (long enough to notice)
-        frames = 40       # smoothness
-        start_offset_y =  22  # start a few rows lower (slides up to 0)
+        frames = 70       # smoothness
+        start_offset_y =  50  # start a few rows lower (slides up to 0)
         
         # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
         use_styles = True
@@ -447,13 +447,13 @@ class ConnectionScreen(Screen):
         # Ensure chat screen starts hidden and slightly lower for a subtle slide-up
         try:
             chat_screen.styles.opacity = 0.0
-            chat_screen.styles.offset = (0, 15)
+            chat_screen.styles.offset = (0, 30)
         except Exception:
             pass
 
         # Fade-in the chat screen
         duration_in = 0.42
-        frames_in = 20
+        frames_in = 40
         try:
             for i in range(frames_in + 1):
                 t = i / frames_in
