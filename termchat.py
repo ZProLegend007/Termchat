@@ -380,72 +380,98 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
+        # Improved transition: immediate dialog animation then push+fade chat in.
         if self.connecting:
             return  # Already connecting
-            
+        self.connecting = True
+
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
-        
-        # Only check for forbidden username, no empty field warnings
+
+        # Forbidden username
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
+            self.connecting = False
             return
-        
-        # Use defaults if fields are empty
+
+        # Defaults
         if not username:
             username = "guest"
         if not chat_name:
             chat_name = "general"
         if not password:
             password = "default"
-        
-        # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
-        try:
-            await self.fade_to_chat(username, chat_name, password)
-        except Exception as e:
-            # Connection failed, show error and reset
-            self.connecting = False
-            status_label.update(f"[red]Connection failed: {str(e)}[/red]")
-            self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
 
-    async def fade_to_chat(self, username: str, chat_name: str, password: str):
-        # Fade out self, then fade in chat screen
-        duration = 0.5
+        # Immediate visual feedback: animate dialog (quick slide up + fade out)
+        dialog = self.query_one("#dialog")
+        duration_out = 0.28
         frames = 20
-        container = self  # the ConnectionScreen itself
-        # Fade out animation
-        for i in range(frames + 1):
-            t = i / frames
-            opacity = 1.0 - t
-            try:
-                container.styles.opacity = opacity
-            except Exception:
-                break
-            await asyncio.sleep(duration / frames)
-        # Actually switch screens
+
+        use_styles = True
+        try:
+            dialog.styles.offset = (0, 0)
+            dialog.styles.opacity = 1.0
+        except Exception:
+            use_styles = False
+
+        if use_styles:
+            for i in range(frames + 1):
+                t = i / frames
+                eased = ease_out_expo(t)
+                # move up slightly and fade out
+                offset_y = int(-3 * eased)  # slide up up to 3 rows
+                opacity = max(0.0, 1.0 - eased)
+                try:
+                    dialog.styles.offset = (0, offset_y)
+                    dialog.styles.opacity = opacity
+                except Exception:
+                    break
+                await asyncio.sleep(duration_out / frames)
+        else:
+            # quick pause as fallback so user sees something happened
+            await asyncio.sleep(duration_out)
+
+        # Now create/push the ChatScreen and fade it in
         chat_screen = ChatScreen(username, chat_name, password)
+        # push the chat screen (this triggers its on_mount where it begins connecting)
         self.app.push_screen(chat_screen)
-        await asyncio.sleep(0.05)
-        # Fade in animation (on chat_screen)
+
+        # Ensure chat screen starts hidden and slightly lower for a subtle slide-up
         try:
             chat_screen.styles.opacity = 0.0
-        except Exception:
-            return
-        for i in range(frames + 1):
-            t = i / frames
-            opacity = t
-            try:
-                chat_screen.styles.opacity = opacity
-            except Exception:
-                break
-            await asyncio.sleep(duration / frames)
-        try:
-            chat_screen.styles.opacity = 1.0
+            chat_screen.styles.offset = (0, 15)
         except Exception:
             pass
 
+        # Fade-in the chat screen
+        duration_in = 0.42
+        frames_in = 20
+        try:
+            for i in range(frames_in + 1):
+                t = i / frames_in
+                eased = ease_out_expo(t)
+                opacity = float(eased)
+                offset_y = int(2 * (1 - eased))
+                try:
+                    chat_screen.styles.opacity = opacity
+                    chat_screen.styles.offset = (0, offset_y)
+                except Exception:
+                    break
+                await asyncio.sleep(duration_in / frames_in)
+            # Ensure final
+            try:
+                chat_screen.styles.opacity = 1.0
+                chat_screen.styles.offset = (0, 0)
+            except Exception:
+                pass
+        except Exception:
+            # If something goes wrong with animation, just continue.
+            pass
+
+        # Reset connecting flag (the chat screen will manage real connection state)
+        self.connecting = False
 
     def action_quit(self):
         self.app.exit()
