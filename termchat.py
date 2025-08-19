@@ -7,8 +7,8 @@ import asyncio
 import websockets
 import json
 import sys
-import certifi
 import ssl
+import certifi
 from typing import Optional
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical
@@ -42,26 +42,14 @@ def launch_new_terminal():
 
     elif platform.system() == "Darwin":
         python = shlex.quote(sys.executable)
-        # Set bounds for the window (pixels)
+        # Set bounds to 1/5th of typical screen size (e.g., 2560x1600 → 512x320)
         left, top = 100, 100
-        right, bottom = left + 912, top + 520
-    
-        # Launch the script in Terminal, reusing the same window if one already exists.
-        # If no Terminal windows exist, this creates one and sets bounds.
+        right, bottom = left + 512, top + 320
         applescript = f'''
         tell application "Terminal"
             activate
-            if (count of windows) = 0 then
-                -- no windows: create a new window and run the command
-                set theResult to do script "{python} {script_path}"
-                delay 0.12
-                try
-                    set bounds of front window to {{{left}, {top}, {right}, {bottom}}}
-                end try
-            else
-                -- there is an existing window: run in the front window (creates a new tab in that window)
-                do script "{python} {script_path}" in front window
-            end if
+            set newWindow to do script "{python} {script_path}"
+            set bounds of front window to {{{left}, {top}, {right}, {bottom}}}
         end tell
         '''
         cmd = f'osascript -e {shlex.quote(applescript)}'
@@ -89,13 +77,11 @@ def launch_new_terminal():
         sys.exit(1)
         
 async def get_general_count(server_url: str) -> int:
-    # Converts wss://... to https://... and gets /general-count using certifi-backed SSL.
-    http_host = server_url.replace("wss://", "https://").split("/")[2]
-    endpoint = f"https://{http_host}/general-count"
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    # Converts wss://... to https://... and gets /general-count
+    http_url = server_url.replace("wss://", "https://").split("/")[2]
+    endpoint = f"https://{http_url}/general-count"
     try:
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with aiohttp.ClientSession() as session:
             async with session.get(endpoint, timeout=3) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -121,7 +107,7 @@ TERMCHAT_ASCII = """
 """
 
 class SplashScreen(Screen):
-# ASCII Art splash screen shown for 2 seconds
+    # ASCII Art splash screen shown with a slide-up + fade-in animation
     
     CSS = """
     SplashScreen {
@@ -140,12 +126,75 @@ class SplashScreen(Screen):
     """
 
     def compose(self) -> ComposeResult:
+        # Create the Static so we can animate it in on_mount.
         yield Static(TERMCHAT_ASCII, id="splash")
 
     def on_mount(self):
-        # Auto-advance to connection dialog after 1.25 seconds
-        self.set_timer(1.25, self.show_connection)
+        # Start the splash animation asynchronously and advance when done.
+        asyncio.create_task(self._animate_and_advance())
+
+    async def _animate_and_advance(self):
+        """
+        Animate the splash logo: slide up from below and fade in with a strong ease-out.
+        After the animation completes we wait a short moment then move to the connection screen.
+        """
+        # Query the splash widget
+        try:
+            splash = self.query_one("#splash", Static)
+        except Exception:
+            # Fallback: if widget isn't present, just advance
+            self.show_connection()
+            return
+
+        # Strong ease-out function (exponential) for a noticeable fast-then-slow effect
+        def ease_out_expo(t: float) -> float:
+            if t >= 1.0:
+                return 1.0
+            # 1 - 2^(-10t) gives a very noticeable ease out
+            return 1 - pow(2, -10 * t)
+
+        # Animation parameters
+        duration = 0.95   # seconds (long enough to notice)
+        frames = 36       # smoothness
+        start_offset_y = 6  # start a few rows lower (slides up to 0)
         
+        # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
+        use_styles = True
+        try:
+            # initialize
+            splash.styles.opacity = 0.0
+            splash.styles.offset = (0, start_offset_y)
+        except Exception:
+            use_styles = False
+
+        if use_styles:
+            for i in range(frames + 1):
+                t = i / frames
+                eased = ease_out_expo(t)
+                y = int(start_offset_y * (1 - eased))
+                opacity = float(eased)
+                try:
+                    splash.styles.offset = (0, y)
+                    splash.styles.opacity = opacity
+                except Exception:
+                    # If styles stop working mid-animation, break out and finalize.
+                    break
+                await asyncio.sleep(duration / frames)
+
+            # Ensure final exact values
+            try:
+                splash.styles.offset = (0, 0)
+                splash.styles.opacity = 1.0
+            except Exception:
+                pass
+        else:
+            # Fallback: simple timed pause so the splash is visible, without animation.
+            await asyncio.sleep(duration)
+
+        # Short pause so the user sees the final state, then advance to connection screen.
+        await asyncio.sleep(0.25)
+        self.show_connection()
+
     def show_connection(self):
         self.app.push_screen("connection")
 
@@ -282,17 +331,15 @@ class ConnectionScreen(Screen):
         label.update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
     async def check_server_status(self):
-    # Foolproof: check server reachability using a certifi-backed SSL context
-    try:
-        import websockets  # keep local import if desired
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        # short timeout/ping to keep this check fast
-        ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
-        await ws.close()
-        self.server_available = True
-    except Exception:
-        self.server_available = False
-    self.update_indicator()
+        # Foolproof: check server reachability (simple websocket ping or http GET)
+        import websockets
+        try:
+            ws = await websockets.connect(self.app.server_url, ping_timeout=2)
+            await ws.close()
+            self.server_available = True
+        except Exception:
+            self.server_available = False
+        self.update_indicator()
 
     def update_indicator(self):
         indicator_light = self.query_one("#indicator_light")
@@ -421,7 +468,8 @@ class ChatScreen(Screen):
         self.username = username
         self.chat_name = chat_name
         self.password = password
-
+        self._last_sent_message = ""    # Stores the last sent message
+        self._recalled = False          # Tracks if recall is active
         
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
@@ -434,9 +482,11 @@ class ChatScreen(Screen):
         # Initialize the chat screen
         # Start connection to server
         await self.connect_to_server()
+         # Bind arrow keys for recall
         input_widget = self.query_one("#message_input")
         input_widget.can_focus = True
         input_widget.focus()
+        input_widget._on_key = self._on_input_key  # Monkey patch key handler
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
@@ -446,9 +496,13 @@ class ChatScreen(Screen):
         user_message = event.value.strip()
         event.input.clear()
 
+        if user_message:
+            self._last_sent_message = user_message
+            self._recalled = False
+        
         if not user_message:
             return
-        
+            
         # Handle clear command
         if user_message.lower() in ['/clear','/c']:
             messages_log = self.query_one("#messages", RichLog)
@@ -466,6 +520,23 @@ class ChatScreen(Screen):
     def action_quit(self):
         self.app.action_quit()
 
+    def _on_input_key(self, event):
+        input_widget = self.query_one("#message_input")
+        # Up arrow: recall last sent
+        if event.key == "up":
+            if self._last_sent_message and not self._recalled:
+                input_widget.value = self._last_sent_message
+                self._recalled = True
+                input_widget.cursor_position = len(self._last_sent_message)
+        # Down arrow: clear recall if active
+        elif event.key == "down":
+            if self._recalled:
+                input_widget.value = ""
+                self._recalled = False
+        else:
+            # Pass through to normal key handler if defined
+            if hasattr(Input, "_on_key"):
+                Input._on_key(input_widget, event)
 
     async def connect_to_server(self):
         # Establish WebSocket connection to the backend
