@@ -561,9 +561,22 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Initialize the chat screen
-        # Start connection to server
-        await self.connect_to_server()
+        # Start the connection in the background so mounting returns quickly and
+        # any transition/fade-in animation can run and be visible.
+        asyncio.create_task(self.connect_to_server())
+
+        # Ensure the screen starts hidden/offscreen so incoming fade/slide-in is visible.
+        try:
+            # small offset so slide-up looks natural on push
+            self.styles.opacity = 0.0
+            self.styles.offset = (0, 6)
+        except Exception:
+            pass
+
+        # Let the event loop and compositor apply initial styles before any animation runs.
+        await asyncio.sleep(0)
+
+        # Ensure input exists and can receive focus immediately (focus will be attempted again after join)
         input_widget = self.query_one("#message_input")
         input_widget.can_focus = True
         input_widget.focus()
@@ -639,7 +652,10 @@ class ChatScreen(Screen):
                         self.query_one("#header").update(f"TERMCHAT - Connected to server:'{self.chat_name}'")
                         messages_log.write(f"[bold #87CEEB]Successfully joined chat '{self.chat_name}'[/bold #87CEEB]")
                         # Focus the input field after successful connection
-                        self.query_one("#message_input").focus()
+                        try:
+                            self.query_one("#message_input").focus()
+                        except Exception:
+                            pass
                         break
                     elif data.get("type") == "message":
                         # Handle server messages during connection
