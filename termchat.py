@@ -381,9 +381,8 @@ class ConnectionScreen(Screen):
 
     async def action_connect(self):
         # Improved transition: immediate dialog animation then push the ChatScreen.
-        # The ChatScreen will perform its own fade/slide-in animation on mount.
         if self.connecting:
-            return  # Already connecting
+            return
         self.connecting = True
 
         username = self.query_one("#username_input").value.strip()
@@ -408,12 +407,12 @@ class ConnectionScreen(Screen):
         def ease_out_expo(t: float) -> float:
             if t >= 1.0:
                 return 1.0
-            return 1 - pow(2, -20 * t)
+            return 1 - pow(2, -18 * t)
 
-        # Immediate visual feedback: animate dialog (quick slide up + fade out)
+        # Animate dialog: quick slide up + fade out for immediate feedback
         dialog = self.query_one("#dialog")
-        duration_out = 0.28
-        frames = 20
+        duration_out = 0.26
+        frames_out = 18
 
         use_styles = True
         try:
@@ -423,25 +422,28 @@ class ConnectionScreen(Screen):
             use_styles = False
 
         if use_styles:
-            for i in range(frames + 1):
-                t = i / frames
+            for i in range(frames_out + 1):
+                t = i / frames_out
                 eased = ease_out_expo(t)
-                offset_y = int(-3 * eased)  # slide up up to 3 rows
+                offset_y = int(-4 * eased)  # slide up up to 4 rows
                 opacity = max(0.0, 1.0 - eased)
                 try:
                     dialog.styles.offset = (0, offset_y)
                     dialog.styles.opacity = opacity
                 except Exception:
                     break
-                await asyncio.sleep(duration_out / frames)
+                await asyncio.sleep(duration_out / frames_out)
         else:
             await asyncio.sleep(duration_out)
 
-        # Create/push the ChatScreen and let the ChatScreen animate itself on mount.
+        # Create and push ChatScreen set to animate on its mount
         chat_screen = ChatScreen(username, chat_name, password, animate_in=True)
         self.app.push_screen(chat_screen)
 
-        # Reset connecting flag (the chat screen will manage real connection state)
+        # Give Textual a little time to mount the new screen and apply initial styles.
+        # This is important so the ChatScreen's on_mount sees compositor-applied initial styles.
+        await asyncio.sleep(0.12)
+
         self.connecting = False
 
     def action_quit(self):
@@ -526,31 +528,31 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Start connection in background so mounting and animation aren't blocked.
+        # Start connection in background so mounting and animation are non-blocking.
         asyncio.create_task(self.connect_to_server())
 
-        # If requested, set an initial hidden/offscreen state so this screen can animate in.
+        # If animate_in was requested, set initial hidden/offscreen state, yield,
+        # then run visible fade+slide animation. The yield gives the compositor time.
         if self.animate_in:
             try:
                 self.styles.opacity = 0.0
-                # start slightly lower for slide-up
-                self.styles.offset = (0, 8)
+                self.styles.offset = (0, 8)  # start below, slide up into place
             except Exception:
+                # Older Textual versions may not support these; fall back gracefully.
                 pass
 
-            # Let compositor apply initial styles
-            await asyncio.sleep(0)
+            # Small yield to let compositor apply initial styles.
+            await asyncio.sleep(0.12)
 
-            # Fade + slide-in animation (strong ease-out)
             def ease_out_expo(t: float) -> float:
                 if t >= 1.0:
                     return 1.0
-                return 1 - pow(2, -20 * t)
+                return 1 - pow(2, -18 * t)
 
-            duration = 0.42
-            frames = 28
-            for i in range(frames + 1):
-                t = i / frames
+            duration_in = 0.55
+            frames_in = 30
+            for i in range(frames_in + 1):
+                t = i / frames_in
                 eased = ease_out_expo(t)
                 opacity = float(eased)
                 offset_y = int(8 * (1 - eased))
@@ -559,16 +561,16 @@ class ChatScreen(Screen):
                     self.styles.offset = (0, offset_y)
                 except Exception:
                     break
-                await asyncio.sleep(duration / frames)
+                await asyncio.sleep(duration_in / frames_in)
 
-            # Ensure final
+            # Ensure final values
             try:
                 self.styles.opacity = 1.0
                 self.styles.offset = (0, 0)
             except Exception:
                 pass
 
-        # Ensure input exists and can receive focus immediately
+        # Ensure input exists and can receive focus
         try:
             input_widget = self.query_one("#message_input")
             input_widget.can_focus = True
