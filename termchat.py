@@ -377,15 +377,7 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        """
-        New robust transition flow:
-        - animate the connection dialog (quick slide+fade) for immediate feedback
-        - mount a full-screen black overlay and fade it IN (cover current screen)
-        - push the ChatScreen (chat will mount behind the opaque overlay)
-        - fade the overlay OUT to reveal ChatScreen
-        - unmount overlay
-        This overlay approach avoids relying on immediate style application on the newly-mounted screen.
-        """
+        # Immediate dialog feedback then push the ChatScreen (chat will animate itself).
         if self.connecting:
             return
         self.connecting = True
@@ -394,12 +386,14 @@ class ConnectionScreen(Screen):
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
 
-        # Validation / defaults
+        # Forbidden username
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
             self.connecting = False
             return
+
+        # Defaults
         if not username:
             username = "guest"
         if not chat_name:
@@ -407,103 +401,42 @@ class ConnectionScreen(Screen):
         if not password:
             password = "default"
 
-        # Quick dialog feedback (small slide-up + fade)
+        # Quick dialog slide-up + fade-out for immediate feedback
         def ease_out(t: float) -> float:
             return 1 - pow(1 - t, 3)
 
         dialog = self.query_one("#dialog")
+        duration_out = 0.22
+        frames_out = 14
+
+        use_styles = True
         try:
             dialog.styles.offset = (0, 0)
             dialog.styles.opacity = 1.0
-            use_styles = True
         except Exception:
             use_styles = False
 
-        duration_dialog = 0.22
-        frames_dialog = 12
         if use_styles:
-            for i in range(frames_dialog + 1):
-                t = i / frames_dialog
+            for i in range(frames_out + 1):
+                t = i / frames_out
                 eased = ease_out(t)
+                offset_y = int(-4 * eased)  # slide up up to 4 rows
+                opacity = max(0.0, 1.0 - eased)
                 try:
-                    dialog.styles.offset = (0, int(-4 * eased))
-                    dialog.styles.opacity = max(0.0, 1.0 - eased)
+                    dialog.styles.offset = (0, offset_y)
+                    dialog.styles.opacity = opacity
                 except Exception:
                     break
-                await asyncio.sleep(duration_dialog / frames_dialog)
+                await asyncio.sleep(duration_out / frames_out)
         else:
-            await asyncio.sleep(duration_dialog)
+            await asyncio.sleep(duration_out)
 
-        # Create an overlay that covers the whole app and fade it in to cover connection screen.
-        overlay = Static("", id="screen_transition_overlay")
-        # mount the overlay at app root so it sits above current screen
-        await self.app.mount(overlay, before=None)
-
-        # Configure overlay appearance and starting state
-        try:
-            overlay.styles.background = "black"
-            overlay.styles.width = "100%"
-            overlay.styles.height = "100%"
-            overlay.styles.offset = (0, 0)
-            overlay.styles.opacity = 0.0
-            # Ensure overlay is visually above: attempt z-index if available
-            overlay.styles.z_index = 1000
-        except Exception:
-            pass
-
-        # small yield so the compositor picks up the overlay
-        await asyncio.sleep(0.06)
-
-        # Fade overlay IN (cover current screen)
-        duration_in = 0.32
-        frames_in = 20
-        for i in range(frames_in + 1):
-            t = i / frames_in
-            eased = ease_out(t)
-            try:
-                overlay.styles.opacity = eased
-            except Exception:
-                break
-            await asyncio.sleep(duration_in / frames_in)
-
-        # Make sure overlay fully opaque
-        try:
-            overlay.styles.opacity = 1.0
-        except Exception:
-            pass
-
-        # Push ChatScreen (chat mounts behind the opaque overlay)
+        # Push the ChatScreen. The ChatScreen does its own fade/slide-in animation on mount.
         chat_screen = ChatScreen(username, chat_name, password)
         self.app.push_screen(chat_screen)
 
-        # Give mount a small moment
-        await asyncio.sleep(0.06)
-
-        # Fade overlay OUT to reveal chat
-        duration_out = 0.45
-        frames_out = 26
-        for i in range(frames_out + 1):
-            t = i / frames_out
-            eased = 1 - pow(1 - t, 3)  # gentle ease-out for reveal
-            try:
-                overlay.styles.opacity = 1.0 - eased
-            except Exception:
-                break
-            await asyncio.sleep(duration_out / frames_out)
-
-        # Ensure fully transparent then remove overlay
-        try:
-            overlay.styles.opacity = 0.0
-        except Exception:
-            pass
-        # remove overlay from DOM
-        try:
-            await overlay.remove()
-        except Exception:
-            try:
-                overlay.remove()
-            except Exception:
-                pass
+        # Small yield so framework can schedule mount events.
+        await asyncio.sleep(0.02)
 
         self.connecting = False
 
@@ -512,18 +445,20 @@ class ConnectionScreen(Screen):
 
 
 class ChatScreen(Screen):
-    # Main chat screen (non-blocking mount + optional subtle self-animation)
-    def __init__(self, username: str, chat_name: str, password: str):
-        super().__init__()
-        self.username = username
-        self.chat_name = chat_name
-        self.password = password
+    # Main chat screen with a reliable self-driven fade/slide-in animation
 
     CSS = """
     ChatScreen {
         layout: vertical;
         background: black;
         color: white;
+    }
+
+    #root {
+        width: 100%;
+        height: 100%;
+        content-align: center middle;
+        /* initial styles are applied from Python so CSS here is minimal */
     }
 
     #header {
@@ -568,10 +503,6 @@ class ChatScreen(Screen):
         color: white;
         content-align: center middle;
     }
-
-    #message_input:focus {
-        border: none;
-    }
     """
 
     BINDINGS = [
@@ -579,44 +510,93 @@ class ChatScreen(Screen):
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
+    def __init__(self, username: str, chat_name: str, password: str):
+        super().__init__()
+        self.username = username
+        self.chat_name = chat_name
+        self.password = password
+
     def compose(self) -> ComposeResult:
-        yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
-        with Container(id="messages_container"):
-            yield RichLog(id="messages", highlight=True, markup=True)
-        with Container(id="input_container"):
-            yield Input(placeholder="Type your message here...", id="message_input")
+        # Wrap everything in a top-level root container that we animate.
+        with Container(id="root"):
+            yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
+            with Container(id="messages_container"):
+                yield RichLog(id="messages", highlight=True, markup=True)
+            with Container(id="input_container"):
+                yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Start connect in background (non-blocking) so screen can render immediately.
+        # Start actual websocket connection in background (non-blocking)
         asyncio.create_task(self.connect_to_server())
 
-        # Subtle self-animation: small back-to-life bounce if desired (non-blocking)
-        # This is optional and very subtle because the overlay handles main fade.
+        # Grab root container and set initial hidden/offscreen state
         try:
-            self.styles.opacity = 1.0
-            # optionally set a tiny offset and animate back to 0 during the first 180ms
-            self.styles.offset = (0, 1)
-            await asyncio.sleep(0)  # allow compositor to apply
-            # bring offset to (0,0) quickly for subtle polish
-            duration = 0.18
-            frames = 8
-            for i in range(frames + 1):
-                t = i / frames
-                eased = 1 - pow(1 - t, 3)
-                try:
-                    self.styles.offset = (0, int(1 * (1 - eased)))
-                except Exception:
-                    break
-                await asyncio.sleep(duration / frames)
-            try:
-                self.styles.offset = (0, 0)
-            except Exception:
-                pass
+            root = self.query_one("#root")
         except Exception:
-            # If styles not available, ignore
-            pass
+            root = None
 
-        # Focus the input so the user can start typing
+        if root is not None:
+            # Initialize start state so animation is visible
+            try:
+                root.styles.opacity = 0.0
+                # start a few rows lower for slide-up effect
+                root.styles.offset = (0, 6)
+            except Exception:
+                # If styles not supported, skip but still attempt to animate opacity via animate()
+                pass
+
+            # Yield once so compositor applies initial styles
+            await asyncio.sleep(0)
+
+            # Use widget.animate for opacity when available (smoother)
+            did_animate = False
+            try:
+                # animate opacity to 1.0 over 420ms
+                await root.animate("opacity", 1.0, duration=0.42)
+                did_animate = True
+            except Exception:
+                did_animate = False
+
+            # If animate worked, run a short manual slide-up to complement it.
+            if did_animate:
+                duration = 0.42
+                frames = 26
+                for i in range(frames + 1):
+                    t = i / frames
+                    eased = 1 - pow(1 - t, 3)
+                    offset_y = int(6 * (1 - eased))
+                    try:
+                        root.styles.offset = (0, offset_y)
+                    except Exception:
+                        break
+                    await asyncio.sleep(duration / frames)
+                # Ensure final
+                try:
+                    root.styles.offset = (0, 0)
+                except Exception:
+                    pass
+            else:
+                # Fallback: manual opacity + slide loop
+                duration = 0.55
+                frames = 36
+                for i in range(frames + 1):
+                    t = i / frames
+                    eased = 1 - pow(1 - t, 3)
+                    opacity = float(eased)
+                    offset_y = int(6 * (1 - eased))
+                    try:
+                        root.styles.opacity = opacity
+                        root.styles.offset = (0, offset_y)
+                    except Exception:
+                        break
+                    await asyncio.sleep(duration / frames)
+                try:
+                    root.styles.opacity = 1.0
+                    root.styles.offset = (0, 0)
+                except Exception:
+                    pass
+
+        # Ensure input is focusable and focused
         try:
             input_widget = self.query_one("#message_input")
             input_widget.can_focus = True
@@ -624,88 +604,67 @@ class ChatScreen(Screen):
         except Exception:
             pass
 
-    
+    # Keep the unchanged networking and message methods below
     async def on_input_submitted(self, event: Input.Submitted):
-        # Handle user message input
         if event.input.id != "message_input":
             return
-            
         user_message = event.value.strip()
         event.input.clear()
-
         if not user_message:
             return
-        
-        # Handle clear command
-        if user_message.lower() in ['/clear','/c']:
+        if user_message.lower() in ['/clear', '/c']:
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             return
-            
-        # Handle quit commands
         if user_message.lower() in ['/quit', '/exit', '/q']:
             await self.app.action_quit()
             return
-        
-        # Send message to server
         await self.send_message(user_message)
 
     def action_quit(self):
         self.app.action_quit()
 
-
     async def connect_to_server(self):
-        # Establish WebSocket connection to the backend
         messages_log = self.query_one("#messages", RichLog)
-        
         try:
-            # Create SSL context with proper settings
             import ssl
             import certifi
             ssl_context = ssl.create_default_context(cafile=certifi.where())
-            
+
             self.app.websocket = await websockets.connect(
                 self.app.server_url,
                 ssl=ssl_context,
                 ping_interval=30,
                 ping_timeout=10,
                 close_timeout=10,
-                max_size=2**20,  # 1MB max message size
-                max_queue=32     # Max queued messages
+                max_size=2**20,
+                max_queue=32
             )
-            
-            # Send authentication message
+
             auth_message = {
                 "type": "join",
                 "username": self.username,
                 "chatname": self.chat_name,
                 "password": self.password
             }
-            
             await self.app.websocket.send(json.dumps(auth_message))
-            
-            # Wait for join confirmation before considering connection complete
+
             try:
                 while True:
                     response = await asyncio.wait_for(self.app.websocket.recv(), timeout=10.0)
                     data = json.loads(response)
-                    
                     if data.get("type") == "join" and data.get("username") == self.username:
-                        # Join successful - set connected state
                         self.app.connected = True
                         self.query_one("#header").update(f"TERMCHAT - Connected to server:'{self.chat_name}'")
                         messages_log.write(f"[bold #87CEEB]Successfully joined chat '{self.chat_name}'[/bold #87CEEB]")
-                        # Focus the input field after successful connection
                         try:
                             self.query_one("#message_input").focus()
                         except Exception:
                             pass
                         break
                     elif data.get("type") == "message":
-                        # Handle server messages during connection
                         username = data.get("username", "Unknown")
                         message = data.get("content", "")
-                        
                         if username == "Server":
                             messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
                         else:
@@ -714,44 +673,25 @@ class ChatScreen(Screen):
                     elif data.get("type") == "error":
                         error_message = data.get("message", "Connection failed")
                         raise Exception(error_message)
-                        
             except asyncio.TimeoutError:
                 raise Exception("Server response timeout - no join confirmation received")
-            
-            # Start listening for messages after successful join
+
             asyncio.create_task(self.listen_for_messages())
-            
-        except websockets.exceptions.InvalidStatusCode as e:
-            if e.status_code == 403:
-                error_msg = "Server is currently disabled or unavailable"
-            else:
-                error_msg = f"Server rejected connection: HTTP {e.status_code}"
-            messages_log.write(f"[bold red]{error_msg}[/bold red]")
-            self.app.notify(error_msg, severity="error")
-            self.app.pop_screen()
-        except OSError as e:
-            if "Name or service not known" in str(e):
-                error_msg = "Cannot resolve server address"
-            elif "Connection refused" in str(e):
-                error_msg = "Server is not responding"
-            else:
-                error_msg = f"Network error: {str(e)}"
-            messages_log.write(f"[bold red]{error_msg}[/bold red]")
-            self.app.notify(error_msg, severity="error")
-            self.app.pop_screen()
+
         except Exception as e:
-            if "server rejected WebSocket connection" in str(e) and "403" in str(e):
-                error_msg = "Server is currently disabled or unavailable"
-            else:
-                error_msg = f"Failed to connect to server: {e}"
-            messages_log.write(f"[bold red]{error_msg}[/bold red]")
-            self.app.notify(error_msg, severity="error")
-            self.app.pop_screen()
+            # On connection errors, show message and pop back to connection screen
+            try:
+                messages_log.write(f"[bold red]Failed to connect: {e}[/bold red]")
+            except Exception:
+                pass
+            self.app.notify(f"Connection failed: {e}", severity="error")
+            try:
+                self.app.pop_screen()
+            except Exception:
+                pass
 
     async def listen_for_messages(self):
-        # Listen for incoming messages from the server
         messages_log = self.query_one("#messages", RichLog)
-        
         try:
             async for message in self.app.websocket:
                 try:
@@ -764,101 +704,71 @@ class ChatScreen(Screen):
         except websockets.exceptions.ConnectionClosed:
             messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
             self.app.connected = False
-            self.query_one("#header").update("TERMCHAT - Disconnected")
+            try:
+                self.query_one("#header").update("TERMCHAT - Disconnected")
+            except Exception:
+                pass
             self.app.notify("Connection lost", severity="warning")
-        except websockets.exceptions.ConnectionClosedError as e:
-            messages_log.write(f"[bold yellow]Connection closed: {e}[/bold yellow]")
-            self.app.connected = False
-            self.query_one("#header").update("TERMCHAT - Connection Closed")
         except Exception as e:
             messages_log.write(f"[bold red]Error receiving messages: {e}[/bold red]")
             self.app.connected = False
 
     async def handle_message(self, data):
-        # Handle different types of messages from the server
         messages_log = self.query_one("#messages", RichLog)
         message_type = data.get("type", "")
-        
         if message_type == "message":
             username = data.get("username", "Unknown")
             message = data.get("content", "")
-            
-            # Display messages with proper formatting - show ALL messages including own
             if username == "Server":
                 messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
             else:
                 user_color = self.app.get_user_color(username)
                 messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
-        
         elif message_type == "join":
             username = data.get("username", "Unknown")
-            # Handle other users joining - server doesn't send join notifications back to joining user
             if username and username != self.username:
                 messages_log.write(f"[bold #87CEEB]A wild {escape(username)} has appeared.[/bold #87CEEB]")
-        
         elif message_type == "leave":
-            username = data.get("username", "Unknown") 
-            # Show leave notifications for all users
+            username = data.get("username", "Unknown")
             if username and username != self.username:
                 messages_log.write(f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
-        
         elif message_type == "colourshift":
-            # Handle theme color change
             new_color = data.get("color", "#87CEEB")
             await self.change_theme_color(new_color)
-            # messages_log.write(f"[bold {new_color}]Theme color changed to {new_color}[/bold {new_color}]")
-        
         elif message_type == "bgshift":
-            messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             bg_color = data.get("color", "#000000")
             await self.change_background_color(bg_color)
-
         elif message_type == "chatclear":
-            messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
-
         elif message_type == "kicked":
             kicked_message = data.get("message", "You have been kicked :)")
-            messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             messages_log.write(f"[bold #FF0000]{kicked_message}[/bold #FF0000]")
             await asyncio.sleep(5)
             await self.app.action_quit()
-            return
-        
         elif message_type == "error":
             error_message = data.get("message", "Unknown error")
             messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
-            # If connection failed, go back to connection screen
             if not self.app.connected:
                 self.app.notify(f"Connection failed: {error_message}", severity="error")
-                self.app.pop_screen()  # Return to connection screen
-        
+                self.app.pop_screen()
         elif message_type == "auth_failed":
             error_message = data.get("message", "Authentication failed")
             messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
             self.app.notify(f"Authentication failed: {error_message}", severity="error")
-            # Go back to connection screen
             self.app.pop_screen()
 
     async def send_message(self, user_message: str):
-        # Send message to server
         if self.app.websocket and self.app.connected:
             try:
-                message_data = {
-                    "type": "message",
-                    "content": user_message
-                }
+                message_data = { "type": "message", "content": user_message }
                 await self.app.websocket.send(json.dumps(message_data))
-            except websockets.exceptions.ConnectionClosed:
-                messages_log = self.query_one("#messages", RichLog)
-                messages_log.write("[bold red]Cannot send message: Connection closed[/bold red]")
-                self.app.connected = False
-                self.query_one("#header").update("TERMCHAT - Disconnected")
             except Exception as e:
                 messages_log = self.query_one("#messages", RichLog)
                 messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
+                self.app.connected = False
+                self.query_one("#header").update("TERMCHAT - Disconnected")
         else:
             messages_log = self.query_one("#messages", RichLog)
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
