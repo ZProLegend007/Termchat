@@ -380,7 +380,8 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        # Improved transition: immediate dialog animation then push+fade chat in.
+        # Improved transition: immediate dialog animation then push the ChatScreen.
+        # The ChatScreen will perform its own fade/slide-in animation on mount.
         if self.connecting:
             return  # Already connecting
         self.connecting = True
@@ -403,13 +404,12 @@ class ConnectionScreen(Screen):
             chat_name = "general"
         if not password:
             password = "default"
-        
+
         def ease_out_expo(t: float) -> float:
             if t >= 1.0:
                 return 1.0
-            # 1 - 2^(-10t) gives a very noticeable ease out
             return 1 - pow(2, -20 * t)
-            
+
         # Immediate visual feedback: animate dialog (quick slide up + fade out)
         dialog = self.query_one("#dialog")
         duration_out = 0.28
@@ -426,7 +426,6 @@ class ConnectionScreen(Screen):
             for i in range(frames + 1):
                 t = i / frames
                 eased = ease_out_expo(t)
-                # move up slightly and fade out
                 offset_y = int(-3 * eased)  # slide up up to 3 rows
                 opacity = max(0.0, 1.0 - eased)
                 try:
@@ -436,45 +435,11 @@ class ConnectionScreen(Screen):
                     break
                 await asyncio.sleep(duration_out / frames)
         else:
-            # quick pause as fallback so user sees something happened
             await asyncio.sleep(duration_out)
 
-        # Now create/push the ChatScreen and fade it in
-        chat_screen = ChatScreen(username, chat_name, password)
-        # push the chat screen (this triggers its on_mount where it begins connecting)
+        # Create/push the ChatScreen and let the ChatScreen animate itself on mount.
+        chat_screen = ChatScreen(username, chat_name, password, animate_in=True)
         self.app.push_screen(chat_screen)
-
-        # Ensure chat screen starts hidden and slightly lower for a subtle slide-up
-        try:
-            chat_screen.styles.opacity = 0.0
-            chat_screen.styles.offset = (0, 30)
-        except Exception:
-            pass
-
-        # Fade-in the chat screen
-        duration_in = 0.42
-        frames_in = 40
-        try:
-            for i in range(frames_in + 1):
-                t = i / frames_in
-                eased = ease_out_expo(t)
-                opacity = float(eased)
-                offset_y = int(2 * (1 - eased))
-                try:
-                    chat_screen.styles.opacity = opacity
-                    chat_screen.styles.offset = (0, offset_y)
-                except Exception:
-                    break
-                await asyncio.sleep(duration_in / frames_in)
-            # Ensure final
-            try:
-                chat_screen.styles.opacity = 1.0
-                chat_screen.styles.offset = (0, 0)
-            except Exception:
-                pass
-        except Exception:
-            # If something goes wrong with animation, just continue.
-            pass
 
         # Reset connecting flag (the chat screen will manage real connection state)
         self.connecting = False
@@ -485,14 +450,14 @@ class ConnectionScreen(Screen):
 
 class ChatScreen(Screen):
     # Main chat screen
-    
+
     CSS = """
     ChatScreen {
         layout: vertical;
         background: black;
         color: white;
     }
-    
+
     #header {
         dock: top;
         height: 3;
@@ -502,13 +467,13 @@ class ChatScreen(Screen):
         text-style: bold;
         padding: 1 0;
     }
-    
+
     #messages_container {
         height: 1fr;
         border: solid #87CEEB;
         margin: 0;
     }
-    
+
     #messages {
         height: 1fr;
         scrollbar-gutter: stable;
@@ -517,7 +482,7 @@ class ChatScreen(Screen):
         color: white;
         padding: 1;
     }
-    
+
     #input_container {
         dock: bottom;
         height: 5;
@@ -526,7 +491,7 @@ class ChatScreen(Screen):
         padding: 1;
         content-align: center middle;
     }
-    
+
     #message_input {
         width: 1fr;
         height: 3;
@@ -535,24 +500,24 @@ class ChatScreen(Screen):
         color: white;
         content-align: center middle;
     }
-    
+
     #message_input:focus {
         border: none;
     }
     """
-    
+
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
-    def __init__(self, username: str, chat_name: str, password: str):
+    def __init__(self, username: str, chat_name: str, password: str, animate_in: bool = False):
         super().__init__()
         self.username = username
         self.chat_name = chat_name
         self.password = password
+        self.animate_in = animate_in
 
-        
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
         with Container(id="messages_container"):
@@ -561,26 +526,57 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Start the connection in the background so mounting returns quickly and
-        # any transition/fade-in animation can run and be visible.
+        # Start connection in background so mounting and animation aren't blocked.
         asyncio.create_task(self.connect_to_server())
 
-        # Ensure the screen starts hidden/offscreen so incoming fade/slide-in is visible.
+        # If requested, set an initial hidden/offscreen state so this screen can animate in.
+        if self.animate_in:
+            try:
+                self.styles.opacity = 0.0
+                # start slightly lower for slide-up
+                self.styles.offset = (0, 8)
+            except Exception:
+                pass
+
+            # Let compositor apply initial styles
+            await asyncio.sleep(0)
+
+            # Fade + slide-in animation (strong ease-out)
+            def ease_out_expo(t: float) -> float:
+                if t >= 1.0:
+                    return 1.0
+                return 1 - pow(2, -20 * t)
+
+            duration = 0.42
+            frames = 28
+            for i in range(frames + 1):
+                t = i / frames
+                eased = ease_out_expo(t)
+                opacity = float(eased)
+                offset_y = int(8 * (1 - eased))
+                try:
+                    self.styles.opacity = opacity
+                    self.styles.offset = (0, offset_y)
+                except Exception:
+                    break
+                await asyncio.sleep(duration / frames)
+
+            # Ensure final
+            try:
+                self.styles.opacity = 1.0
+                self.styles.offset = (0, 0)
+            except Exception:
+                pass
+
+        # Ensure input exists and can receive focus immediately
         try:
-            # small offset so slide-up looks natural on push
-            self.styles.opacity = 0.0
-            self.styles.offset = (0, 6)
+            input_widget = self.query_one("#message_input")
+            input_widget.can_focus = True
+            input_widget.focus()
         except Exception:
             pass
 
-        # Let the event loop and compositor apply initial styles before any animation runs.
-        await asyncio.sleep(0)
-
-        # Ensure input exists and can receive focus immediately (focus will be attempted again after join)
-        input_widget = self.query_one("#message_input")
-        input_widget.can_focus = True
-        input_widget.focus()
-
+    
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
         if event.input.id != "message_input":
