@@ -22,6 +22,76 @@ import subprocess
 import shlex
 import aiohttp
 
+NAMED_COLORS = {
+    "black": "#000000",
+    "white": "#FFFFFF",
+    "red": "#FF0000",
+    "green": "#00FF00",
+    "yellow": "#FFFF00",
+    "magenta": "#FF00FF",
+    "cyan": "#00FFFF",
+    "bright_red": "#FF5555",
+    "bright_yellow": "#FFFF55",
+    "bright_magenta": "#FF55FF",
+    "bright_cyan": "#55FFFF",
+    "bright_green": "#55FF55",
+    "bright_blue": "#5555FF",
+    "termchat_default": "#87CEEB",
+}
+
+def normalize_hex(s: str) -> str:
+    # Return a normalized 6-char hex like '#RRGGBB' for a color name or hex-like string.
+    if not s:
+        return "#000000"
+    s = str(s).strip()
+    # If contains a hex, return the first #RRGGBB
+    if "#" in s:
+        idx = s.find("#")
+        h = s[idx:idx+7]
+        if len(h) == 7:
+            return h.upper()
+    # try named map
+    if s.lower() in NAMED_COLORS:
+        return NAMED_COLORS[s.lower()].upper()
+    # fallback: find any token starting with '#'
+    parts = s.split()
+    for p in parts:
+        if p.startswith("#") and len(p) >= 7:
+            return p[:7].upper()
+    return "#000000"
+
+def hex_to_rgb(h: str):
+    h = normalize_hex(h).lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+def rgb_to_hex(rgb):
+    return "#{:02X}{:02X}{:02X}".format(
+        max(0, min(255, int(rgb[0]))),
+        max(0, min(255, int(rgb[1]))),
+        max(0, min(255, int(rgb[2])))
+    )
+
+def blend_toward_black(hex_color: str, factor: float) -> str:
+    # Factor 1.0 => original color, 0.0 => black.
+    r, g, b = hex_to_rgb(hex_color)
+    r2 = int(r * factor)
+    g2 = int(g * factor)
+    b2 = int(b * factor)
+    return rgb_to_hex((r2, g2, b2))
+
+def blend_between(hex_from: str, hex_to: str, t: float) -> str:
+    # Linear blend from hex_from -> hex_to at t (0..1).
+    r1, g1, b1 = hex_to_rgb(hex_from)
+    r2, g2, b2 = hex_to_rgb(hex_to)
+    r = int(r1 + (r2 - r1) * t)
+    g = int(g1 + (g2 - g1) * t)
+    b = int(b1 + (b2 - b1) * t)
+    return rgb_to_hex((r, g, b))
+
+def ease_out_expo(t: float) -> float:
+    if t >= 1.0:
+        return 1.0
+    return 1 - pow(2, -12 * t)
 
 def is_in_terminal():
     # Heuristically check if we're running in a real terminal.
@@ -380,36 +450,194 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
+        # Fade dialog -> black using color blending, push ChatScreen, then fade black -> chat colors.
         if self.connecting:
-            return  # Already connecting
-            
+            return
+        self.connecting = True
+
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
-        
-        # Only check for forbidden username, no empty field warnings
+
+        # Forbidden username
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
+            self.connecting = False
             return
-        
-        # Use defaults if fields are empty
+
+        # Defaults
         if not username:
             username = "guest"
         if not chat_name:
             chat_name = "general"
         if not password:
             password = "default"
-        
-        # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
-        try:
-            self.app.start_chat(username, chat_name, password)
-        except Exception as e:
-            # Connection failed, show error and reset
-            self.connecting = False
-            status_label.update(f"[red]Connection failed: {str(e)}[/red]")
-            self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
 
+        # Query dialog elements
+        try:
+            dialog = self.query_one("#dialog")
+        except Exception:
+            dialog = None
+        try:
+            title = self.query_one("#title")
+        except Exception:
+            title = None
+        try:
+            indicator_light = self.query_one("#indicator_light")
+            indicator_text = self.query_one("#indicator_text")
+        except Exception:
+            indicator_light = None
+            indicator_text = None
+
+        # Source colors (use app.theme_color if present)
+        base_border = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
+        base_title = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
+        base_text = normalize_hex("#FFFFFF")
+        base_bg = normalize_hex("black")
+
+        # Fade dialog toward black (factor 1->0)
+        duration = 0.36
+        frames = 22
+        for i in range(frames + 1):
+            t = i / frames
+            eased = ease_out_expo(t)
+            factor = max(0.0, 1.0 - eased)  # 1 -> 0
+            border_hex = blend_toward_black(base_border, factor)
+            title_hex = blend_toward_black(base_title, factor)
+            text_hex = blend_toward_black(base_text, factor)
+            bg_hex = blend_toward_black(base_bg, factor)
+
+            if dialog is not None:
+                try:
+                    dialog.styles.border = ("solid", border_hex)
+                except Exception:
+                    pass
+                try:
+                    dialog.styles.background = bg_hex
+                except Exception:
+                    pass
+            if title is not None:
+                try:
+                    title.styles.color = title_hex
+                except Exception:
+                    pass
+            if indicator_light is not None:
+                try:
+                    indicator_light.styles.color = text_hex
+                except Exception:
+                    pass
+            if indicator_text is not None:
+                try:
+                    indicator_text.styles.color = text_hex
+                except Exception:
+                    pass
+
+            await asyncio.sleep(duration / frames)
+
+        # Ensure dialog ends black
+        if dialog is not None:
+            try:
+                dialog.styles.border = ("solid", "#000000")
+            except Exception:
+                pass
+            try:
+                dialog.styles.background = "#000000"
+            except Exception:
+                pass
+        if title is not None:
+            try:
+                title.styles.color = "#000000"
+            except Exception:
+                pass
+
+        # Push the ChatScreen behind a black visual state
+        chat_screen = ChatScreen(username, chat_name, password)
+        self.app.push_screen(chat_screen)
+
+        # let framework mount chat screen
+        await asyncio.sleep(0.06)
+
+        # Determine target chat colours (header and borders)
+        target_header_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
+        target_border_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
+        target_bg_hex = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
+
+        # Try to query chat widgets safely
+        header = None
+        messages_container = None
+        input_container = None
+        try:
+            header = chat_screen.query_one("#header")
+        except Exception:
+            pass
+        try:
+            messages_container = chat_screen.query_one("#messages_container")
+        except Exception:
+            pass
+        try:
+            input_container = chat_screen.query_one("#input_container")
+        except Exception:
+            pass
+
+        # Fade from black -> target colors
+        frames2 = 26
+        duration2 = 0.48
+        for i in range(frames2 + 1):
+            t = i / frames2
+            eased = ease_out_expo(t)
+            bg_hex = blend_between("#000000", target_bg_hex, eased)
+            header_hex = blend_between("#000000", target_header_hex, eased)
+            border_hex = blend_between("#000000", target_border_hex, eased)
+
+            try:
+                chat_screen.styles.background = bg_hex
+            except Exception:
+                pass
+            if header is not None:
+                try:
+                    header.styles.color = header_hex
+                except Exception:
+                    pass
+            if messages_container is not None:
+                try:
+                    messages_container.styles.border = ("solid", border_hex)
+                    messages_container.styles.background = bg_hex
+                except Exception:
+                    pass
+            if input_container is not None:
+                try:
+                    input_container.styles.border = ("solid", border_hex)
+                    input_container.styles.background = bg_hex
+                except Exception:
+                    pass
+
+            await asyncio.sleep(duration2 / frames2)
+
+        # Ensure final target colours applied
+        try:
+            chat_screen.styles.background = target_bg_hex
+        except Exception:
+            pass
+        if header is not None:
+            try:
+                header.styles.color = target_header_hex
+            except Exception:
+                pass
+        if messages_container is not None:
+            try:
+                messages_container.styles.border = ("solid", target_border_hex)
+                messages_container.styles.background = target_bg_hex
+            except Exception:
+                pass
+        if input_container is not None:
+            try:
+                input_container.styles.border = ("solid", target_border_hex)
+                input_container.styles.background = target_bg_hex
+            except Exception:
+                pass
+
+        self.connecting = False
 
     def action_quit(self):
         self.app.exit()
