@@ -22,6 +22,7 @@ import subprocess
 import shlex
 import aiohttp
 
+# Color blending helpers — add immediately after imports (after `import aiohttp`)
 NAMED_COLORS = {
     "black": "#000000",
     "white": "#FFFFFF",
@@ -44,16 +45,13 @@ def normalize_hex(s: str) -> str:
     if not s:
         return "#000000"
     s = str(s).strip()
-    # If contains a hex, return the first #RRGGBB
     if "#" in s:
         idx = s.find("#")
         h = s[idx:idx+7]
         if len(h) == 7:
             return h.upper()
-    # try named map
     if s.lower() in NAMED_COLORS:
         return NAMED_COLORS[s.lower()].upper()
-    # fallback: find any token starting with '#'
     parts = s.split()
     for p in parts:
         if p.startswith("#") and len(p) >= 7:
@@ -442,7 +440,7 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        # Fade dialog -> black using color blending, push ChatScreen, then fade black -> chat colors.
+        # Fade dialog -> black by blending colours, then push ChatScreen and fade black -> theme.
         if getattr(self, "connecting", False):
             return
         self.connecting = True
@@ -451,14 +449,12 @@ class ConnectionScreen(Screen):
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
 
-        # Forbidden username
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
             self.connecting = False
             return
 
-        # Defaults
         if not username:
             username = "guest"
         if not chat_name:
@@ -482,20 +478,19 @@ class ConnectionScreen(Screen):
             indicator_light = None
             indicator_text = None
 
-        # Source colours: use app.theme_color if present
-        app_theme = getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB"
-        base_border = normalize_hex(app_theme)
-        base_title = normalize_hex(app_theme)
+        # Source colours (use app.theme_color if set)
+        app_theme = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
+        base_border = app_theme
+        base_title = app_theme
         base_text = normalize_hex("#FFFFFF")
         base_bg = normalize_hex("black")
 
-        # Fade dialog toward black (blend from base -> #000000)
+        # Fade dialog -> black (direct interpolation base -> #000000)
         duration = 0.36
         frames = 22
         for i in range(frames + 1):
             t = i / frames
             eased = ease_out_expo(t)
-            # eased goes 0 -> 1, use it to blend from base -> black
             border_hex = blend_between(base_border, "#000000", eased)
             title_hex = blend_between(base_title, "#000000", eased)
             text_hex = blend_between(base_text, "#000000", eased)
@@ -528,7 +523,7 @@ class ConnectionScreen(Screen):
 
             await asyncio.sleep(duration / frames)
 
-        # Ensure dialog ends black
+        # Ensure fully black final
         if dialog is not None:
             try:
                 dialog.styles.border = ("solid", "#000000")
@@ -544,36 +539,56 @@ class ConnectionScreen(Screen):
             except Exception:
                 pass
 
-        # Push ChatScreen behind a black visual state
+        # Push chat screen (it will be revealed from black -> theme)
         chat_screen = ChatScreen(username, chat_name, password)
         self.app.push_screen(chat_screen)
 
-        # let framework mount chat screen
+        # Give framework a short moment to mount the screen
         await asyncio.sleep(0.06)
 
-        # Targets for chat: header color and borders come from app.theme_color (same theme)
+        # Query chat widgets
+        try:
+            header = chat_screen.query_one("#header")
+        except Exception:
+            header = None
+        try:
+            messages_container = chat_screen.query_one("#messages_container")
+        except Exception:
+            messages_container = None
+        try:
+            input_container = chat_screen.query_one("#input_container")
+        except Exception:
+            input_container = None
+
+        # Immediately set chat elements to black base so the fade-from-black is visible.
+        try:
+            chat_screen.styles.background = "#000000"
+        except Exception:
+            pass
+        if header is not None:
+            try:
+                header.styles.color = "#000000"
+            except Exception:
+                pass
+        if messages_container is not None:
+            try:
+                messages_container.styles.border = ("solid", "#000000")
+                messages_container.styles.background = "#000000"
+            except Exception:
+                pass
+        if input_container is not None:
+            try:
+                input_container.styles.border = ("solid", "#000000")
+                input_container.styles.background = "#000000"
+            except Exception:
+                pass
+
+        # Targets for chat fade (use app.theme_color and app.background_color)
         target_header_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
         target_border_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
         target_bg_hex = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
 
-        # Query chat sub-widgets (best-effort)
-        header = None
-        messages_container = None
-        input_container = None
-        try:
-            header = chat_screen.query_one("#header")
-        except Exception:
-            pass
-        try:
-            messages_container = chat_screen.query_one("#messages_container")
-        except Exception:
-            pass
-        try:
-            input_container = chat_screen.query_one("#input_container")
-        except Exception:
-            pass
-
-        # Fade from black -> target colours
+        # Fade black -> target (direct interpolation)
         frames2 = 26
         duration2 = 0.48
         for i in range(frames2 + 1):
@@ -958,12 +973,8 @@ class ChatScreen(Screen):
 
     async def change_theme_color(self, new_color: str):
         """
-        Smooth theme transition integrated with colourshift:
-        - fade current theme -> black (by tinting header/borders/background)
-        - then fade black -> new_color
-        This reuses the same hex-blending approach as connection fade.
+        Direct blend from current theme -> new_color (no black intermediate).
         """
-        # Normalize colors
         try:
             current_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
         except Exception:
@@ -973,7 +984,6 @@ class ChatScreen(Screen):
         except Exception:
             target_hex = "#87CEEB"
 
-        # Query relevant widgets
         try:
             header = self.query_one("#header")
         except Exception:
@@ -987,16 +997,16 @@ class ChatScreen(Screen):
         except Exception:
             input_container = None
 
-        # Phase 1: fade current theme -> black
-        frames = 18
-        duration = 0.30
+        frames = 26
+        duration = 0.48
         for i in range(frames + 1):
             t = i / frames
             eased = ease_out_expo(t)
-            # blend current -> black
-            header_hex = blend_between(current_hex, "#000000", eased)
-            border_hex = blend_between(current_hex, "#000000", eased)
-            bg_hex = blend_between(getattr(self.app, "background_color", "#000000"), "#000000", eased)
+            header_hex = blend_between(current_hex, target_hex, eased)
+            border_hex = blend_between(current_hex, target_hex, eased)
+            bg_target = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
+            bg_hex = blend_between(getattr(self.app, "background_color", "#000000"), bg_target, 1.0)  # keep background as is
+
             try:
                 if header:
                     header.styles.color = header_hex
@@ -1005,6 +1015,7 @@ class ChatScreen(Screen):
             try:
                 if messages_container:
                     messages_container.styles.border = ("solid", border_hex)
+                if messages_container:
                     messages_container.styles.background = bg_hex
             except Exception:
                 pass
@@ -1015,71 +1026,14 @@ class ChatScreen(Screen):
             except Exception:
                 pass
             try:
-                self.styles.background = bg_hex
+                # keep app background unchanged by colorshift; only update header/borders
+                pass
             except Exception:
                 pass
 
             await asyncio.sleep(duration / frames)
 
-        # Ensure black base
-        try:
-            if header:
-                header.styles.color = "#000000"
-        except Exception:
-            pass
-        try:
-            if messages_container:
-                messages_container.styles.border = ("solid", "#000000")
-                messages_container.styles.background = "#000000"
-        except Exception:
-            pass
-        try:
-            if input_container:
-                input_container.styles.border = ("solid", "#000000")
-                input_container.styles.background = "#000000"
-        except Exception:
-            pass
-        try:
-            self.styles.background = "#000000"
-        except Exception:
-            pass
-
-        # Phase 2: fade black -> target_hex
-        frames2 = 22
-        duration2 = 0.42
-        for i in range(frames2 + 1):
-            t = i / frames2
-            eased = ease_out_expo(t)
-            header_hex = blend_between("#000000", target_hex, eased)
-            border_hex = blend_between("#000000", target_hex, eased)
-            bg_target = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
-            bg_hex = blend_between("#000000", bg_target, eased)
-
-            try:
-                if header:
-                    header.styles.color = header_hex
-            except Exception:
-                pass
-            try:
-                if messages_container:
-                    messages_container.styles.border = ("solid", border_hex)
-                    messages_container.styles.background = bg_hex
-            except Exception:
-                pass
-            try:
-                if input_container:
-                    input_container.styles.border = ("solid", border_hex)
-                    input_container.styles.background = bg_hex
-            except Exception:
-                pass
-            try:
-                self.styles.background = bg_hex
-            except Exception:
-                pass
-
-            await asyncio.sleep(duration2 / frames2)
-
-        # Finalize: set app theme and ensure final colors applied
+        # finalize
         try:
             self.app.theme_color = target_hex
         except Exception:
@@ -1092,13 +1046,11 @@ class ChatScreen(Screen):
         try:
             if messages_container:
                 messages_container.styles.border = ("solid", target_hex)
-                messages_container.styles.background = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
         except Exception:
             pass
         try:
             if input_container:
                 input_container.styles.border = ("solid", target_hex)
-                input_container.styles.background = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
         except Exception:
             pass
 
