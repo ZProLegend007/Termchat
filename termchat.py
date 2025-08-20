@@ -22,77 +22,6 @@ import subprocess
 import shlex
 import aiohttp
 
-NAMED_COLORS = {
-    "black": "#000000",
-    "white": "#FFFFFF",
-    "red": "#FF0000",
-    "green": "#00FF00",
-    "yellow": "#FFFF00",
-    "magenta": "#FF00FF",
-    "cyan": "#00FFFF",
-    "bright_red": "#FF5555",
-    "bright_yellow": "#FFFF55",
-    "bright_magenta": "#FF55FF",
-    "bright_cyan": "#55FFFF",
-    "bright_green": "#55FF55",
-    "bright_blue": "#5555FF",
-    # common UI color present in code:
-    "termchat_default": "#87CEEB"
-}
-
-def normalize_hex(s: str) -> str:
-    """Return a normalized 6-char hex like '#RRGGBB' for a color name or hex-like string."""
-    if not s:
-        return "#000000"
-    s = str(s).strip()
-    # If markup like "bold #87CEEB", pull the hex part
-    if "#" in s:
-        idx = s.find("#")
-        h = s[idx:idx+7]
-        if len(h) == 7:
-            return h.upper()
-    # try named map
-    if s.lower() in NAMED_COLORS:
-        return NAMED_COLORS[s.lower()].upper()
-    # Fallback: if starts with 'bold ' and hex next
-    parts = s.split()
-    for p in parts:
-        if p.startswith("#") and len(p) >= 7:
-            return p[:7].upper()
-    return "#000000"
-
-def hex_to_rgb(h: str):
-    h = normalize_hex(h).lstrip("#")
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-
-def rgb_to_hex(rgb):
-    return "#{:02X}{:02X}{:02X}".format(
-        max(0, min(255, int(rgb[0]))),
-        max(0, min(255, int(rgb[1]))),
-        max(0, min(255, int(rgb[2])))
-    )
-
-def blend_toward_black(hex_color: str, factor: float) -> str:
-    """Factor 1.0 => original color, 0.0 => black."""
-    r, g, b = hex_to_rgb(hex_color)
-    r2 = int(r * factor)
-    g2 = int(g * factor)
-    b2 = int(b * factor)
-    return rgb_to_hex((r2, g2, b2))
-
-def blend_between(hex_from: str, hex_to: str, t: float) -> str:
-    """Linear blend from hex_from -> hex_to at t (0..1)."""
-    r1, g1, b1 = hex_to_rgb(hex_from)
-    r2, g2, b2 = hex_to_rgb(hex_to)
-    r = int(r1 + (r2 - r1) * t)
-    g = int(g1 + (g2 - g1) * t)
-    b = int(b1 + (b2 - b1) * t)
-    return rgb_to_hex((r, g, b))
-
-def ease_out_expo(t: float) -> float:
-    if t >= 1.0:
-        return 1.0
-    return 1 - pow(2, -12 * t)
 
 def is_in_terminal():
     # Heuristically check if we're running in a real terminal.
@@ -239,8 +168,8 @@ class SplashScreen(Screen):
 
         # Animation parameters
         duration = 1.2   # seconds (long enough to notice)
-        frames = 70       # smoothness
-        start_offset_y =  50  # start a few rows lower (slides up to 0)
+        frames = 40       # smoothness
+        start_offset_y =  22  # start a few rows lower (slides up to 0)
         
         # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
         use_styles = True
@@ -284,13 +213,19 @@ class SplashScreen(Screen):
 
 
 class ConnectionScreen(Screen):
-    # Modal screen for connection details - uses dialog.animate and pushes ChatScreen.
+    # Modal screen for connection details 
+    
+    def __init__(self):
+        super().__init__()
+        self.connecting = False
+        self.general_count = None
+        
     CSS = """
     ConnectionScreen {
         align: center middle;
         background: black;
     }
-
+    
     #dialog {
         width: 80;
         height: 25;
@@ -313,17 +248,55 @@ class ConnectionScreen(Screen):
         align: center middle;
         margin-bottom: 1;
     }
-    #indicator_light { width: 2; content-align: center middle; }
-    #indicator_text { margin-left: 1; color: white; }
-    #hint_row { width: 100%; content-align: center middle; margin-top: 2; }
-    #form { layout: vertical; height: auto; margin: 2; padding: 1; }
-    .form-row { height: 3; layout: horizontal; margin-bottom: 1; }
-    .label { width: 15; content-align: right middle; margin-right: 2; color: #cccccc; text-style: bold; }
-    .input { width: 35; height: 3; color: white; border: solid #333333; }
-    .input:focus { border: solid #87CEEB; }
-    #status_label { width: 40; content-align: center middle; color: yellow; text-style: bold; }
-    """
+    #indicator_light {
+        width: 2;
+        content-align: center middle;
+    }
+    #indicator_text {
+        margin-left: 1;
+        color: white;
+    }
 
+    #hint_row {
+        width: 100%;
+        content-align: center middle;
+        margin-top: 2;
+    }
+    #form {
+        layout: vertical;
+        height: auto;
+        margin: 2;
+        padding: 1;
+    }
+    .form-row {
+        height: 3;
+        layout: horizontal;
+        margin-bottom: 1;
+    }
+    .label {
+        width: 15;
+        content-align: right middle;
+        margin-right: 2;
+        color: #cccccc;
+        text-style: bold;
+    }
+    .input {
+        width: 35;
+        height: 3;
+        color: white;
+        border: solid #333333;
+    }
+    .input:focus {
+        border: solid #87CEEB;
+    }
+    #status_label {
+        width: 40;
+        content-align: center middle;
+        color: yellow;
+        text-style: bold;
+    }
+    """
+    
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("escape", "quit", "Quit"),
@@ -331,11 +304,6 @@ class ConnectionScreen(Screen):
         Binding("shift+tab", "focus_previous", "Previous Field"),
         Binding("enter", "connect", "Connect"),
     ]
-
-    def __init__(self):
-        super().__init__()
-        self.connecting = False
-        self.general_count = None
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog"):
@@ -346,9 +314,9 @@ class ConnectionScreen(Screen):
             yield Container(
                 Label(
                     "       Keep the [#cccccc]chat name[/#cccccc] and [#cccccc]password[/#cccccc] blank to join the [#90ee90]general chat[/#90ee90]",
-                    markup=True,
+                    markup=True
                 ),
-                id="hint_row",
+                id="hint_row"
             )
             with Container(id="form"):
                 with Container(classes="form-row"):
@@ -369,232 +337,94 @@ class ConnectionScreen(Screen):
         self.set_timer(0.1, self.check_server_status)
         asyncio.create_task(self.update_general_count())
 
-    async def action_connect(self):
-        # Use color blending to fade dialog -> black, then swap screens and fade black -> chat colors.
-        if self.connecting:
-            return
-        self.connecting = True
+    async def update_general_count(self):
+        count = await get_general_count(self.app.server_url)
+        self.general_count = count
+        label = self.query_one("#general_count_label")
+        label.update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
+    async def check_server_status(self):
+    # Foolproof: check server reachability using a certifi-backed SSL context
+        try:
+            import websockets  # keep local import if desired
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            # short timeout/ping to keep this check fast
+            ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
+            await ws.close()
+            self.server_available = True
+        except Exception:
+            self.server_available = False
+        self.update_indicator()
+
+    def update_indicator(self):
+        indicator_light = self.query_one("#indicator_light")
+        indicator_text = self.query_one("#indicator_text")
+        if self.server_available:
+            indicator_light.update("●")
+            indicator_light.styles.color = "#00ff00"
+            indicator_text.update("Server available")
+            indicator_text.styles.color = "#00ff00"
+        else:
+            indicator_light.update("●")
+            indicator_light.styles.color = "#ff0000"
+            indicator_text.update("Server unavailable")
+            indicator_text.styles.color = "#ff0000"
+    
+    async def on_input_submitted(self, event: Input.Submitted):
+        # Handle Enter key in any input field - navigate to next or connect
+        if event.input.id == "username_input":
+            self.query_one("#chatname_input").focus()
+        elif event.input.id == "chatname_input":
+            self.query_one("#password_input").focus()
+        elif event.input.id == "password_input":
+            await self.action_connect()
+
+    async def action_connect(self):
+        if self.connecting:
+            return  # Already connecting
+            
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
-
-        # Forbidden username
+        
+        # Only check for forbidden username, no empty field warnings
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
-            self.connecting = False
             return
-
-        # Defaults
+        
+        # Use defaults if fields are empty
         if not username:
             username = "guest"
         if not chat_name:
             chat_name = "general"
         if not password:
             password = "default"
-
-        # Elements to tint on the connection dialog
-        dialog = self.query_one("#dialog")
-        title = None
-        indicator_light = None
-        indicator_text = None
+        
+        # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
         try:
-            title = self.query_one("#title")
-        except Exception:
-            pass
-        try:
-            indicator_light = self.query_one("#indicator_light")
-            indicator_text = self.query_one("#indicator_text")
-        except Exception:
-            pass
+            self.app.start_chat(username, chat_name, password)
+        except Exception as e:
+            # Connection failed, show error and reset
+            self.connecting = False
+            status_label.update(f"[red]Connection failed: {str(e)}[/red]")
+            self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
 
-        # Base colours (fall back to app defaults)
-        base_border = normalize_hex(self.app.theme_color or "#87CEEB")
-        base_title = normalize_hex(self.app.theme_color or "#87CEEB")
-        base_text = normalize_hex("#FFFFFF")
-        base_bg = normalize_hex("black")  # dialog background is black; blending will still run
-
-        # Animate: blend dialog colours toward black (factor from 1 -> 0)
-        duration = 0.36
-        frames = 24
-        for i in range(frames + 1):
-            t = i / frames
-            eased = ease_out_expo(t)
-            factor = max(0.0, 1.0 - eased)  # 1->0
-            # compute blended colors (original * factor)
-            try:
-                border_hex = blend_toward_black(base_border, factor)
-                title_hex = blend_toward_black(base_title, factor)
-                text_hex = blend_toward_black(base_text, factor)
-                bg_hex = blend_toward_black(base_bg, factor)
-            except Exception:
-                border_hex = "#000000"
-                title_hex = "#000000"
-                text_hex = "#000000"
-                bg_hex = "#000000"
-
-            # Apply colors safely (guarded)
-            try:
-                dialog.styles.border = ("solid", border_hex)
-            except Exception:
-                pass
-            try:
-                dialog.styles.background = bg_hex
-            except Exception:
-                pass
-            if title:
-                try:
-                    title.styles.color = title_hex
-                except Exception:
-                    pass
-            if indicator_light:
-                try:
-                    indicator_light.styles.color = text_hex
-                except Exception:
-                    pass
-            if indicator_text:
-                try:
-                    indicator_text.styles.color = text_hex
-                except Exception:
-                    pass
-
-            await asyncio.sleep(duration / frames)
-
-        # Ensure full black final
-        try:
-            dialog.styles.border = ("solid", "#000000")
-        except Exception:
-            pass
-        try:
-            dialog.styles.background = "#000000"
-        except Exception:
-            pass
-        if title:
-            try:
-                title.styles.color = "#000000"
-            except Exception:
-                pass
-
-        # Now push ChatScreen (the chat will mount behind an effectively black dialog)
-        chat_screen = ChatScreen(username, chat_name, password)
-        self.app.push_screen(chat_screen)
-
-        # Give the framework a short moment to mount the chat screen
-        await asyncio.sleep(0.06)
-
-        # Fade from black -> chat target colors by tinting chat screen elements
-        try:
-            # Targets for chat: header color and borders come from app.theme_color
-            target_header_hex = normalize_hex(self.app.theme_color or "#87CEEB")
-            target_border_hex = normalize_hex(self.app.theme_color or "#87CEEB")
-            target_bg_hex = normalize_hex(getattr(self.app, "background_color", "#000000"))
-        except Exception:
-            target_header_hex = "#87CEEB"
-            target_border_hex = "#87CEEB"
-            target_bg_hex = "#000000"
-
-        # Query chat sub-widgets (best-effort)
-        header = None
-        messages_container = None
-        input_container = None
-        try:
-            header = chat_screen.query_one("#header")
-        except Exception:
-            pass
-        try:
-            messages_container = chat_screen.query_one("#messages_container")
-        except Exception:
-            pass
-        try:
-            input_container = chat_screen.query_one("#input_container")
-        except Exception:
-            pass
-
-        # Animate from black -> target colours
-        frames2 = 26
-        duration2 = 0.45
-        for i in range(frames2 + 1):
-            t = i / frames2
-            eased = ease_out_expo(t)
-            # blend between black and target at eased factor
-            try:
-                bg_hex = blend_between("#000000", target_bg_hex, eased)
-                header_hex = blend_between("#000000", target_header_hex, eased)
-                border_hex = blend_between("#000000", target_border_hex, eased)
-            except Exception:
-                bg_hex = target_bg_hex
-                header_hex = target_header_hex
-                border_hex = target_border_hex
-
-            try:
-                chat_screen.styles.background = bg_hex
-            except Exception:
-                pass
-            if header:
-                try:
-                    header.styles.color = header_hex
-                except Exception:
-                    pass
-            if messages_container:
-                try:
-                    messages_container.styles.border = ("solid", border_hex)
-                    messages_container.styles.background = bg_hex
-                except Exception:
-                    pass
-            if input_container:
-                try:
-                    input_container.styles.border = ("solid", border_hex)
-                    input_container.styles.background = bg_hex
-                except Exception:
-                    pass
-
-            await asyncio.sleep(duration2 / frames2)
-
-        # Ensure final target colours applied
-        try:
-            chat_screen.styles.background = target_bg_hex
-        except Exception:
-            pass
-        if header:
-            try:
-                header.styles.color = target_header_hex
-            except Exception:
-                pass
-        if messages_container:
-            try:
-                messages_container.styles.border = ("solid", target_border_hex)
-                messages_container.styles.background = target_bg_hex
-            except Exception:
-                pass
-        if input_container:
-            try:
-                input_container.styles.border = ("solid", target_border_hex)
-                input_container.styles.background = target_bg_hex
-            except Exception:
-                pass
-
-        self.connecting = False
 
     def action_quit(self):
         self.app.exit()
 
+
 class ChatScreen(Screen):
-    # Main chat screen — the root container is initially hidden via CSS and then animated on mount.
+    # Main chat screen
+    
     CSS = """
     ChatScreen {
         layout: vertical;
         background: black;
         color: white;
     }
-
-    /* start hidden so on_mount can animate to visible without writing to .styles */
-    #root {
-        width: 100%;
-        height: 100%;
-        opacity: 0.0;
-    }
-
+    
     #header {
         dock: top;
         height: 3;
@@ -604,13 +434,13 @@ class ChatScreen(Screen):
         text-style: bold;
         padding: 1 0;
     }
-
+    
     #messages_container {
         height: 1fr;
         border: solid #87CEEB;
         margin: 0;
     }
-
+    
     #messages {
         height: 1fr;
         scrollbar-gutter: stable;
@@ -619,7 +449,7 @@ class ChatScreen(Screen):
         color: white;
         padding: 1;
     }
-
+    
     #input_container {
         dock: bottom;
         height: 5;
@@ -628,7 +458,7 @@ class ChatScreen(Screen):
         padding: 1;
         content-align: center middle;
     }
-
+    
     #message_input {
         width: 1fr;
         height: 3;
@@ -637,8 +467,12 @@ class ChatScreen(Screen):
         color: white;
         content-align: center middle;
     }
+    
+    #message_input:focus {
+        border: none;
+    }
     """
-
+    
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+q", "quit", "Quit"),
@@ -650,6 +484,7 @@ class ChatScreen(Screen):
         self.chat_name = chat_name
         self.password = password
 
+        
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
         with Container(id="messages_container"):
@@ -658,86 +493,91 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Ensure connect runs in background; mount/animation controlled by ConnectionScreen
-        asyncio.create_task(self.connect_to_server())
-
-        # Make sure input is focusable and focused when revealed
-        try:
-            input_widget = self.query_one("#message_input")
-            input_widget.can_focus = True
-            input_widget.focus()
-        except Exception:
-            pass
+        # Initialize the chat screen
+        # Start connection to server
+        await self.connect_to_server()
+        input_widget = self.query_one("#message_input")
+        input_widget.can_focus = True
+        input_widget.focus()
 
     async def on_input_submitted(self, event: Input.Submitted):
+        # Handle user message input
         if event.input.id != "message_input":
             return
-
+            
         user_message = event.value.strip()
         event.input.clear()
 
         if not user_message:
             return
-
+        
         # Handle clear command
         if user_message.lower() in ['/clear','/c']:
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             return
-
+            
         # Handle quit commands
         if user_message.lower() in ['/quit', '/exit', '/q']:
             await self.app.action_quit()
             return
-
+        
         # Send message to server
         await self.send_message(user_message)
 
     def action_quit(self):
         self.app.action_quit()
 
-    # keep your existing networking methods (connect_to_server, listen_for_messages, handle_message, send_message, etc.)
+
     async def connect_to_server(self):
+        # Establish WebSocket connection to the backend
         messages_log = self.query_one("#messages", RichLog)
+        
         try:
+            # Create SSL context with proper settings
             import ssl
             import certifi
             ssl_context = ssl.create_default_context(cafile=certifi.where())
-
+            
             self.app.websocket = await websockets.connect(
                 self.app.server_url,
                 ssl=ssl_context,
                 ping_interval=30,
                 ping_timeout=10,
                 close_timeout=10,
-                max_size=2**20,
-                max_queue=32
+                max_size=2**20,  # 1MB max message size
+                max_queue=32     # Max queued messages
             )
-
+            
+            # Send authentication message
             auth_message = {
                 "type": "join",
                 "username": self.username,
                 "chatname": self.chat_name,
                 "password": self.password
             }
+            
             await self.app.websocket.send(json.dumps(auth_message))
-
+            
+            # Wait for join confirmation before considering connection complete
             try:
                 while True:
                     response = await asyncio.wait_for(self.app.websocket.recv(), timeout=10.0)
                     data = json.loads(response)
+                    
                     if data.get("type") == "join" and data.get("username") == self.username:
+                        # Join successful - set connected state
                         self.app.connected = True
                         self.query_one("#header").update(f"TERMCHAT - Connected to server:'{self.chat_name}'")
                         messages_log.write(f"[bold #87CEEB]Successfully joined chat '{self.chat_name}'[/bold #87CEEB]")
-                        try:
-                            self.query_one("#message_input").focus()
-                        except Exception:
-                            pass
+                        # Focus the input field after successful connection
+                        self.query_one("#message_input").focus()
                         break
                     elif data.get("type") == "message":
+                        # Handle server messages during connection
                         username = data.get("username", "Unknown")
                         message = data.get("content", "")
+                        
                         if username == "Server":
                             messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
                         else:
@@ -746,24 +586,44 @@ class ChatScreen(Screen):
                     elif data.get("type") == "error":
                         error_message = data.get("message", "Connection failed")
                         raise Exception(error_message)
+                        
             except asyncio.TimeoutError:
                 raise Exception("Server response timeout - no join confirmation received")
-
+            
+            # Start listening for messages after successful join
             asyncio.create_task(self.listen_for_messages())
-
+            
+        except websockets.exceptions.InvalidStatusCode as e:
+            if e.status_code == 403:
+                error_msg = "Server is currently disabled or unavailable"
+            else:
+                error_msg = f"Server rejected connection: HTTP {e.status_code}"
+            messages_log.write(f"[bold red]{error_msg}[/bold red]")
+            self.app.notify(error_msg, severity="error")
+            self.app.pop_screen()
+        except OSError as e:
+            if "Name or service not known" in str(e):
+                error_msg = "Cannot resolve server address"
+            elif "Connection refused" in str(e):
+                error_msg = "Server is not responding"
+            else:
+                error_msg = f"Network error: {str(e)}"
+            messages_log.write(f"[bold red]{error_msg}[/bold red]")
+            self.app.notify(error_msg, severity="error")
+            self.app.pop_screen()
         except Exception as e:
-            try:
-                messages_log.write(f"[bold red]Failed to connect: {e}[/bold red]")
-            except Exception:
-                pass
-            self.app.notify(f"Connection failed: {e}", severity="error")
-            try:
-                self.app.pop_screen()
-            except Exception:
-                pass
+            if "server rejected WebSocket connection" in str(e) and "403" in str(e):
+                error_msg = "Server is currently disabled or unavailable"
+            else:
+                error_msg = f"Failed to connect to server: {e}"
+            messages_log.write(f"[bold red]{error_msg}[/bold red]")
+            self.app.notify(error_msg, severity="error")
+            self.app.pop_screen()
 
     async def listen_for_messages(self):
+        # Listen for incoming messages from the server
         messages_log = self.query_one("#messages", RichLog)
+        
         try:
             async for message in self.app.websocket:
                 try:
@@ -776,40 +636,101 @@ class ChatScreen(Screen):
         except websockets.exceptions.ConnectionClosed:
             messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
             self.app.connected = False
-            try:
-                self.query_one("#header").update("TERMCHAT - Disconnected")
-            except Exception:
-                pass
+            self.query_one("#header").update("TERMCHAT - Disconnected")
             self.app.notify("Connection lost", severity="warning")
+        except websockets.exceptions.ConnectionClosedError as e:
+            messages_log.write(f"[bold yellow]Connection closed: {e}[/bold yellow]")
+            self.app.connected = False
+            self.query_one("#header").update("TERMCHAT - Connection Closed")
         except Exception as e:
             messages_log.write(f"[bold red]Error receiving messages: {e}[/bold red]")
             self.app.connected = False
 
     async def handle_message(self, data):
+        # Handle different types of messages from the server
         messages_log = self.query_one("#messages", RichLog)
         message_type = data.get("type", "")
+        
         if message_type == "message":
             username = data.get("username", "Unknown")
             message = data.get("content", "")
+            
+            # Display messages with proper formatting - show ALL messages including own
             if username == "Server":
                 messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
             else:
                 user_color = self.app.get_user_color(username)
                 messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
+        
+        elif message_type == "join":
+            username = data.get("username", "Unknown")
+            # Handle other users joining - server doesn't send join notifications back to joining user
+            if username and username != self.username:
+                messages_log.write(f"[bold #87CEEB]A wild {escape(username)} has appeared.[/bold #87CEEB]")
+        
+        elif message_type == "leave":
+            username = data.get("username", "Unknown") 
+            # Show leave notifications for all users
+            if username and username != self.username:
+                messages_log.write(f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
+        
+        elif message_type == "colourshift":
+            # Handle theme color change
+            new_color = data.get("color", "#87CEEB")
+            await self.change_theme_color(new_color)
+            # messages_log.write(f"[bold {new_color}]Theme color changed to {new_color}[/bold {new_color}]")
+        
+        elif message_type == "bgshift":
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.clear()
+            bg_color = data.get("color", "#000000")
+            await self.change_background_color(bg_color)
+
+        elif message_type == "chatclear":
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.clear()
+
+        elif message_type == "kicked":
+            kicked_message = data.get("message", "You have been kicked :)")
+            messages_log = self.query_one("#messages", RichLog)
+            messages_log.clear()
+            messages_log.write(f"[bold #FF0000]{kicked_message}[/bold #FF0000]")
+            await asyncio.sleep(5)
+            await self.app.action_quit()
+            return
+        
+        elif message_type == "error":
+            error_message = data.get("message", "Unknown error")
+            messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
+            # If connection failed, go back to connection screen
+            if not self.app.connected:
+                self.app.notify(f"Connection failed: {error_message}", severity="error")
+                self.app.pop_screen()  # Return to connection screen
+        
+        elif message_type == "auth_failed":
+            error_message = data.get("message", "Authentication failed")
+            messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
+            self.app.notify(f"Authentication failed: {error_message}", severity="error")
+            # Go back to connection screen
+            self.app.pop_screen()
 
     async def send_message(self, user_message: str):
+        # Send message to server
         if self.app.websocket and self.app.connected:
             try:
-                message_data = {"type": "message", "content": user_message}
+                message_data = {
+                    "type": "message",
+                    "content": user_message
+                }
                 await self.app.websocket.send(json.dumps(message_data))
+            except websockets.exceptions.ConnectionClosed:
+                messages_log = self.query_one("#messages", RichLog)
+                messages_log.write("[bold red]Cannot send message: Connection closed[/bold red]")
+                self.app.connected = False
+                self.query_one("#header").update("TERMCHAT - Disconnected")
             except Exception as e:
                 messages_log = self.query_one("#messages", RichLog)
                 messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
-                self.app.connected = False
-                try:
-                    self.query_one("#header").update("TERMCHAT - Disconnected")
-                except Exception:
-                    pass
         else:
             messages_log = self.query_one("#messages", RichLog)
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
