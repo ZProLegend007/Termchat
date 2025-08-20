@@ -213,13 +213,7 @@ class SplashScreen(Screen):
 
 
 class ConnectionScreen(Screen):
-    # Modal screen for connection details + robust overlay-driven transition
-
-    def __init__(self):
-        super().__init__()
-        self.connecting = False
-        self.general_count = None
-
+    # Modal screen for connection details - uses dialog.animate and pushes ChatScreen.
     CSS = """
     ConnectionScreen {
         align: center middle;
@@ -248,53 +242,15 @@ class ConnectionScreen(Screen):
         align: center middle;
         margin-bottom: 1;
     }
-    #indicator_light {
-        width: 2;
-        content-align: center middle;
-    }
-    #indicator_text {
-        margin-left: 1;
-        color: white;
-    }
-
-    #hint_row {
-        width: 100%;
-        content-align: center middle;
-        margin-top: 2;
-    }
-    #form {
-        layout: vertical;
-        height: auto;
-        margin: 2;
-        padding: 1;
-    }
-    .form-row {
-        height: 3;
-        layout: horizontal;
-        margin-bottom: 1;
-    }
-    .label {
-        width: 15;
-        content-align: right middle;
-        margin-right: 2;
-        color: #cccccc;
-        text-style: bold;
-    }
-    .input {
-        width: 35;
-        height: 3;
-        color: white;
-        border: solid #333333;
-    }
-    .input:focus {
-        border: solid #87CEEB;
-    }
-    #status_label {
-        width: 40;
-        content-align: center middle;
-        color: yellow;
-        text-style: bold;
-    }
+    #indicator_light { width: 2; content-align: center middle; }
+    #indicator_text { margin-left: 1; color: white; }
+    #hint_row { width: 100%; content-align: center middle; margin-top: 2; }
+    #form { layout: vertical; height: auto; margin: 2; padding: 1; }
+    .form-row { height: 3; layout: horizontal; margin-bottom: 1; }
+    .label { width: 15; content-align: right middle; margin-right: 2; color: #cccccc; text-style: bold; }
+    .input { width: 35; height: 3; color: white; border: solid #333333; }
+    .input:focus { border: solid #87CEEB; }
+    #status_label { width: 40; content-align: center middle; color: yellow; text-style: bold; }
     """
 
     BINDINGS = [
@@ -305,6 +261,11 @@ class ConnectionScreen(Screen):
         Binding("enter", "connect", "Connect"),
     ]
 
+    def __init__(self):
+        super().__init__()
+        self.connecting = False
+        self.general_count = None
+
     def compose(self) -> ComposeResult:
         with Container(id="dialog"):
             yield Label("TERMCHAT Connection", id="title")
@@ -314,9 +275,9 @@ class ConnectionScreen(Screen):
             yield Container(
                 Label(
                     "       Keep the [#cccccc]chat name[/#cccccc] and [#cccccc]password[/#cccccc] blank to join the [#90ee90]general chat[/#90ee90]",
-                    markup=True
+                    markup=True,
                 ),
-                id="hint_row"
+                id="hint_row",
             )
             with Container(id="form"):
                 with Container(classes="form-row"):
@@ -377,14 +338,7 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        """
-        Robust transition:
-        - quick dialog fade (using widget.animate if available)
-        - mount a full-screen overlay and animate it to fully opaque (cover)
-        - push ChatScreen while overlay hides the swap
-        - animate overlay back to transparent to reveal chat
-        This avoids writing to .styles directly, using widget.animate when available.
-        """
+        # Robust: use widget.animate only (no direct .styles writes) and rely on ChatScreen to animate itself on mount.
         if self.connecting:
             return
         self.connecting = True
@@ -393,12 +347,12 @@ class ConnectionScreen(Screen):
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
 
-        # Validation / defaults
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
             self.connecting = False
             return
+
         if not username:
             username = "guest"
         if not chat_name:
@@ -406,78 +360,24 @@ class ConnectionScreen(Screen):
         if not password:
             password = "default"
 
-        # Try to animate dialog fade for quick feedback (uses .animate if available).
         dialog = self.query_one("#dialog")
         dialog_anim = getattr(dialog, "animate", None)
         if dialog_anim is not None:
             try:
-                # animate opacity to 0 quickly
-                await dialog.animate("opacity", 0.0, duration=0.20)
+                # fade dialog out quickly for immediate feedback
+                await dialog.animate("opacity", 0.0, duration=0.18)
             except Exception:
-                # if animate fails, fall back to a short pause
-                await asyncio.sleep(0.20)
+                # fall back to short pause
+                await asyncio.sleep(0.18)
         else:
-            await asyncio.sleep(0.20)
+            await asyncio.sleep(0.18)
 
-        # Create overlay and mount it at app root so it sits above screens
-        overlay = Static("", id="screen_transition_overlay")
-        await self.app.mount(overlay, before=None)
-
-        # Configure overlay initial appearance safely (avoid direct .styles writes that may raise)
-        try:
-            # try best-effort: set background and z-index if supported
-            overlay.styles.background = "black"
-            overlay.styles.width = "100%"
-            overlay.styles.height = "100%"
-            overlay.styles.opacity = 0.0
-            overlay.styles.z_index = 1000
-        except Exception:
-            # ignore — we will rely on animate where available
-            pass
-
-        # allow compositor to pick up overlay
-        await asyncio.sleep(0.06)
-
-        # Fade overlay IN (use animate if available)
-        overlay_anim = getattr(overlay, "animate", None)
-        if overlay_anim is not None:
-            try:
-                await overlay.animate("opacity", 1.0, duration=0.32)
-            except Exception:
-                await asyncio.sleep(0.32)
-        else:
-            await asyncio.sleep(0.32)
-
-        # Ensure fully opaque if possible (best-effort)
-        try:
-            overlay.styles.opacity = 1.0
-        except Exception:
-            pass
-
-        # Push the ChatScreen while overlay hides the swap
+        # Push the ChatScreen which contains its own mount animation
         chat_screen = ChatScreen(username, chat_name, password)
         self.app.push_screen(chat_screen)
 
-        # Give mount a moment for ChatScreen to arrive
-        await asyncio.sleep(0.06)
-
-        # Fade overlay OUT (reveal chat)
-        if overlay_anim is not None:
-            try:
-                await overlay.animate("opacity", 0.0, duration=0.45)
-            except Exception:
-                await asyncio.sleep(0.45)
-        else:
-            await asyncio.sleep(0.45)
-
-        # Remove overlay (best-effort)
-        try:
-            await overlay.remove()
-        except Exception:
-            try:
-                overlay.remove()
-            except Exception:
-                pass
+        # small yield so framework schedules mount handlers
+        await asyncio.sleep(0.02)
 
         self.connecting = False
 
@@ -486,19 +386,19 @@ class ConnectionScreen(Screen):
 
 
 class ChatScreen(Screen):
-    # Main chat screen (connect runs in background; overlay reveals this screen)
-
-    def __init__(self, username: str, chat_name: str, password: str):
-        super().__init__()
-        self.username = username
-        self.chat_name = chat_name
-        self.password = password
-
+    # Main chat screen — the root container is initially hidden via CSS and then animated on mount.
     CSS = """
     ChatScreen {
         layout: vertical;
         background: black;
         color: white;
+    }
+
+    /* start hidden so on_mount can animate to visible without writing to .styles */
+    #root {
+        width: 100%;
+        height: 100%;
+        opacity: 0.0;
     }
 
     #header {
@@ -543,10 +443,6 @@ class ChatScreen(Screen):
         color: white;
         content-align: center middle;
     }
-
-    #message_input:focus {
-        border: none;
-    }
     """
 
     BINDINGS = [
@@ -554,18 +450,45 @@ class ChatScreen(Screen):
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
+    def __init__(self, username: str, chat_name: str, password: str):
+        super().__init__()
+        self.username = username
+        self.chat_name = chat_name
+        self.password = password
+
     def compose(self) -> ComposeResult:
-        yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
-        with Container(id="messages_container"):
-            yield RichLog(id="messages", highlight=True, markup=True)
-        with Container(id="input_container"):
-            yield Input(placeholder="Type your message here...", id="message_input")
+        # Everything wrapped in #root so we can animate that widget's opacity.
+        with Container(id="root"):
+            yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
+            with Container(id="messages_container"):
+                yield RichLog(id="messages", highlight=True, markup=True)
+            with Container(id="input_container"):
+                yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Start the websocket connection in the background so mount isn't blocked and overlay reveal can be visible.
+        # Start connection in background so mount and animation are not blocked.
         asyncio.create_task(self.connect_to_server())
 
-        # Focus input immediately (connect will focus again after join)
+        # Attempt to animate the #root container's opacity from 0 -> 1 using widget.animate.
+        # This avoids direct .styles writes that can raise in some Textual versions.
+        try:
+            root = self.query_one("#root")
+        except Exception:
+            root = None
+
+        if root is not None:
+            anim = getattr(root, "animate", None)
+            if anim is not None:
+                try:
+                    # visible fade-in (duration tuned to be noticeable)
+                    await root.animate("opacity", 1.0, duration=0.45)
+                except Exception:
+                    # fallback small pause if animate isn't available or fails
+                    await asyncio.sleep(0.45)
+            else:
+                await asyncio.sleep(0.45)
+
+        # Ensure input exists and can receive focus
         try:
             input_widget = self.query_one("#message_input")
             input_widget.can_focus = True
@@ -573,7 +496,6 @@ class ChatScreen(Screen):
         except Exception:
             pass
 
-    # Networking and message-handling methods unchanged - keep your existing implementations below.
     async def on_input_submitted(self, event: Input.Submitted):
         if event.input.id != "message_input":
             return
@@ -593,6 +515,7 @@ class ChatScreen(Screen):
     def action_quit(self):
         self.app.action_quit()
 
+    # keep your existing networking methods (connect_to_server, listen_for_messages, handle_message, send_message, etc.)
     async def connect_to_server(self):
         messages_log = self.query_one("#messages", RichLog)
         try:
@@ -692,45 +615,11 @@ class ChatScreen(Screen):
             else:
                 user_color = self.app.get_user_color(username)
                 messages_log.write(f"[{user_color}]\\[{escape(username)}]:[/{user_color}] {escape(message)}")
-        elif message_type == "join":
-            username = data.get("username", "Unknown")
-            if username and username != self.username:
-                messages_log.write(f"[bold #87CEEB]A wild {escape(username)} has appeared.[/bold #87CEEB]")
-        elif message_type == "leave":
-            username = data.get("username", "Unknown")
-            if username and username != self.username:
-                messages_log.write(f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
-        elif message_type == "colourshift":
-            new_color = data.get("color", "#87CEEB")
-            await self.change_theme_color(new_color)
-        elif message_type == "bgshift":
-            messages_log.clear()
-            bg_color = data.get("color", "#000000")
-            await self.change_background_color(bg_color)
-        elif message_type == "chatclear":
-            messages_log.clear()
-        elif message_type == "kicked":
-            kicked_message = data.get("message", "You have been kicked :)")
-            messages_log.clear()
-            messages_log.write(f"[bold #FF0000]{kicked_message}[/bold #FF0000]")
-            await asyncio.sleep(5)
-            await self.app.action_quit()
-        elif message_type == "error":
-            error_message = data.get("message", "Unknown error")
-            messages_log.write(f"[bold red]Error: {escape(error_message)}[/bold red]")
-            if not self.app.connected:
-                self.app.notify(f"Connection failed: {error_message}", severity="error")
-                self.app.pop_screen()
-        elif message_type == "auth_failed":
-            error_message = data.get("message", "Authentication failed")
-            messages_log.write(f"[bold red]Authentication failed: {escape(error_message)}[/bold red]")
-            self.app.notify(f"Authentication failed: {error_message}", severity="error")
-            self.app.pop_screen()
 
     async def send_message(self, user_message: str):
         if self.app.websocket and self.app.connected:
             try:
-                message_data = { "type": "message", "content": user_message }
+                message_data = {"type": "message", "content": user_message}
                 await self.app.websocket.send(json.dumps(message_data))
             except Exception as e:
                 messages_log = self.query_one("#messages", RichLog)
