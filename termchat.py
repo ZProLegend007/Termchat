@@ -377,7 +377,14 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        # Immediate dialog feedback then push the ChatScreen (chat will animate itself).
+        """
+        Robust transition:
+        - quick dialog fade (using widget.animate if available)
+        - mount a full-screen overlay and animate it to fully opaque (cover)
+        - push ChatScreen while overlay hides the swap
+        - animate overlay back to transparent to reveal chat
+        This avoids writing to .styles directly, using widget.animate when available.
+        """
         if self.connecting:
             return
         self.connecting = True
@@ -386,14 +393,12 @@ class ConnectionScreen(Screen):
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
 
-        # Forbidden username
+        # Validation / defaults
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
             self.connecting = False
             return
-
-        # Defaults
         if not username:
             username = "guest"
         if not chat_name:
@@ -401,42 +406,78 @@ class ConnectionScreen(Screen):
         if not password:
             password = "default"
 
-        # Quick dialog slide-up + fade-out for immediate feedback
-        def ease_out(t: float) -> float:
-            return 1 - pow(1 - t, 3)
-
+        # Try to animate dialog fade for quick feedback (uses .animate if available).
         dialog = self.query_one("#dialog")
-        duration_out = 0.22
-        frames_out = 14
-
-        use_styles = True
-        try:
-            dialog.styles.offset = (0, 0)
-            dialog.styles.opacity = 1.0
-        except Exception:
-            use_styles = False
-
-        if use_styles:
-            for i in range(frames_out + 1):
-                t = i / frames_out
-                eased = ease_out(t)
-                offset_y = int(-4 * eased)  # slide up up to 4 rows
-                opacity = max(0.0, 1.0 - eased)
-                try:
-                    dialog.styles.offset = (0, offset_y)
-                    dialog.styles.opacity = opacity
-                except Exception:
-                    break
-                await asyncio.sleep(duration_out / frames_out)
+        dialog_anim = getattr(dialog, "animate", None)
+        if dialog_anim is not None:
+            try:
+                # animate opacity to 0 quickly
+                await dialog.animate("opacity", 0.0, duration=0.20)
+            except Exception:
+                # if animate fails, fall back to a short pause
+                await asyncio.sleep(0.20)
         else:
-            await asyncio.sleep(duration_out)
+            await asyncio.sleep(0.20)
 
-        # Push the ChatScreen. The ChatScreen does its own fade/slide-in animation on mount.
+        # Create overlay and mount it at app root so it sits above screens
+        overlay = Static("", id="screen_transition_overlay")
+        await self.app.mount(overlay, before=None)
+
+        # Configure overlay initial appearance safely (avoid direct .styles writes that may raise)
+        try:
+            # try best-effort: set background and z-index if supported
+            overlay.styles.background = "black"
+            overlay.styles.width = "100%"
+            overlay.styles.height = "100%"
+            overlay.styles.opacity = 0.0
+            overlay.styles.z_index = 1000
+        except Exception:
+            # ignore — we will rely on animate where available
+            pass
+
+        # allow compositor to pick up overlay
+        await asyncio.sleep(0.06)
+
+        # Fade overlay IN (use animate if available)
+        overlay_anim = getattr(overlay, "animate", None)
+        if overlay_anim is not None:
+            try:
+                await overlay.animate("opacity", 1.0, duration=0.32)
+            except Exception:
+                await asyncio.sleep(0.32)
+        else:
+            await asyncio.sleep(0.32)
+
+        # Ensure fully opaque if possible (best-effort)
+        try:
+            overlay.styles.opacity = 1.0
+        except Exception:
+            pass
+
+        # Push the ChatScreen while overlay hides the swap
         chat_screen = ChatScreen(username, chat_name, password)
         self.app.push_screen(chat_screen)
 
-        # Small yield so framework can schedule mount events.
-        await asyncio.sleep(0.02)
+        # Give mount a moment for ChatScreen to arrive
+        await asyncio.sleep(0.06)
+
+        # Fade overlay OUT (reveal chat)
+        if overlay_anim is not None:
+            try:
+                await overlay.animate("opacity", 0.0, duration=0.45)
+            except Exception:
+                await asyncio.sleep(0.45)
+        else:
+            await asyncio.sleep(0.45)
+
+        # Remove overlay (best-effort)
+        try:
+            await overlay.remove()
+        except Exception:
+            try:
+                overlay.remove()
+            except Exception:
+                pass
 
         self.connecting = False
 
@@ -445,20 +486,19 @@ class ConnectionScreen(Screen):
 
 
 class ChatScreen(Screen):
-    # Main chat screen with a reliable self-driven fade/slide-in animation
+    # Main chat screen (connect runs in background; overlay reveals this screen)
+
+    def __init__(self, username: str, chat_name: str, password: str):
+        super().__init__()
+        self.username = username
+        self.chat_name = chat_name
+        self.password = password
 
     CSS = """
     ChatScreen {
         layout: vertical;
         background: black;
         color: white;
-    }
-
-    #root {
-        width: 100%;
-        height: 100%;
-        content-align: center middle;
-        /* initial styles are applied from Python so CSS here is minimal */
     }
 
     #header {
@@ -503,6 +543,10 @@ class ChatScreen(Screen):
         color: white;
         content-align: center middle;
     }
+
+    #message_input:focus {
+        border: none;
+    }
     """
 
     BINDINGS = [
@@ -510,93 +554,18 @@ class ChatScreen(Screen):
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
-    def __init__(self, username: str, chat_name: str, password: str):
-        super().__init__()
-        self.username = username
-        self.chat_name = chat_name
-        self.password = password
-
     def compose(self) -> ComposeResult:
-        # Wrap everything in a top-level root container that we animate.
-        with Container(id="root"):
-            yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
-            with Container(id="messages_container"):
-                yield RichLog(id="messages", highlight=True, markup=True)
-            with Container(id="input_container"):
-                yield Input(placeholder="Type your message here...", id="message_input")
+        yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
+        with Container(id="messages_container"):
+            yield RichLog(id="messages", highlight=True, markup=True)
+        with Container(id="input_container"):
+            yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Start actual websocket connection in background (non-blocking)
+        # Start the websocket connection in the background so mount isn't blocked and overlay reveal can be visible.
         asyncio.create_task(self.connect_to_server())
 
-        # Grab root container and set initial hidden/offscreen state
-        try:
-            root = self.query_one("#root")
-        except Exception:
-            root = None
-
-        if root is not None:
-            # Initialize start state so animation is visible
-            try:
-                root.styles.opacity = 0.0
-                # start a few rows lower for slide-up effect
-                root.styles.offset = (0, 6)
-            except Exception:
-                # If styles not supported, skip but still attempt to animate opacity via animate()
-                pass
-
-            # Yield once so compositor applies initial styles
-            await asyncio.sleep(0)
-
-            # Use widget.animate for opacity when available (smoother)
-            did_animate = False
-            try:
-                # animate opacity to 1.0 over 420ms
-                await root.animate("opacity", 1.0, duration=0.42)
-                did_animate = True
-            except Exception:
-                did_animate = False
-
-            # If animate worked, run a short manual slide-up to complement it.
-            if did_animate:
-                duration = 0.42
-                frames = 26
-                for i in range(frames + 1):
-                    t = i / frames
-                    eased = 1 - pow(1 - t, 3)
-                    offset_y = int(6 * (1 - eased))
-                    try:
-                        root.styles.offset = (0, offset_y)
-                    except Exception:
-                        break
-                    await asyncio.sleep(duration / frames)
-                # Ensure final
-                try:
-                    root.styles.offset = (0, 0)
-                except Exception:
-                    pass
-            else:
-                # Fallback: manual opacity + slide loop
-                duration = 0.55
-                frames = 36
-                for i in range(frames + 1):
-                    t = i / frames
-                    eased = 1 - pow(1 - t, 3)
-                    opacity = float(eased)
-                    offset_y = int(6 * (1 - eased))
-                    try:
-                        root.styles.opacity = opacity
-                        root.styles.offset = (0, offset_y)
-                    except Exception:
-                        break
-                    await asyncio.sleep(duration / frames)
-                try:
-                    root.styles.opacity = 1.0
-                    root.styles.offset = (0, 0)
-                except Exception:
-                    pass
-
-        # Ensure input is focusable and focused
+        # Focus input immediately (connect will focus again after join)
         try:
             input_widget = self.query_one("#message_input")
             input_widget.can_focus = True
@@ -604,7 +573,7 @@ class ChatScreen(Screen):
         except Exception:
             pass
 
-    # Keep the unchanged networking and message methods below
+    # Networking and message-handling methods unchanged - keep your existing implementations below.
     async def on_input_submitted(self, event: Input.Submitted):
         if event.input.id != "message_input":
             return
@@ -612,7 +581,7 @@ class ChatScreen(Screen):
         event.input.clear()
         if not user_message:
             return
-        if user_message.lower() in ['/clear', '/c']:
+        if user_message.lower() in ['/clear','/c']:
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             return
@@ -679,7 +648,6 @@ class ChatScreen(Screen):
             asyncio.create_task(self.listen_for_messages())
 
         except Exception as e:
-            # On connection errors, show message and pop back to connection screen
             try:
                 messages_log.write(f"[bold red]Failed to connect: {e}[/bold red]")
             except Exception:
@@ -768,7 +736,10 @@ class ChatScreen(Screen):
                 messages_log = self.query_one("#messages", RichLog)
                 messages_log.write(f"[bold red]Error sending message: {e}[/bold red]")
                 self.app.connected = False
-                self.query_one("#header").update("TERMCHAT - Disconnected")
+                try:
+                    self.query_one("#header").update("TERMCHAT - Disconnected")
+                except Exception:
+                    pass
         else:
             messages_log = self.query_one("#messages", RichLog)
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
