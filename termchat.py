@@ -241,25 +241,24 @@ class SplashScreen(Screen):
             use_styles = False
 
         if use_styles:
+            # NOTE: animation logic intentionally contains NO try/except so failures surface.
             for i in range(frames + 1):
                 t = i / frames
                 eased = ease_out_expo(t)
                 y = int(start_offset_y * (1 - eased))
                 opacity = float(eased)
-                try:
-                    splash.styles.offset = (0, y)
-                    splash.styles.opacity = opacity
-                except Exception:
-                    # If styles stop working mid-animation, break out and finalize.
-                    break
+
+                splash.styles.offset = (0, y)
+                splash.styles.opacity = opacity
+
+                # force a refresh so terminal shows each step
+                await self.app.refresh()
                 await asyncio.sleep(duration / frames)
 
             # Ensure final exact values
-            try:
-                splash.styles.offset = (0, 0)
-                splash.styles.opacity = 1.0
-            except Exception:
-                pass
+            splash.styles.offset = (0, 0)
+            splash.styles.opacity = 1.0
+            await self.app.refresh()
         else:
             # Fallback: simple timed pause so the splash is visible, without animation.
             await asyncio.sleep(duration)
@@ -404,13 +403,16 @@ class ConnectionScreen(Screen):
         label.update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
     async def check_server_status(self):
-    # Foolproof: check server reachability using a certifi-backed SSL context
-        import websockets  # keep local import if desired
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        # short timeout/ping to keep this check fast
-        ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
-        await ws.close()
-        self.server_available = True
+        # Foolproof: check server reachability using a certifi-backed SSL context
+        try:
+            import websockets  # keep local import if desired
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            # short timeout/ping to keep this check fast
+            ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
+            await ws.close()
+            self.server_available = True
+        except Exception:
+            self.server_available = False
         self.update_indicator()
 
     def update_indicator(self):
@@ -486,6 +488,8 @@ class ConnectionScreen(Screen):
         # Fade duration to black (0.5s) — use frames so step is visible
         duration = 0.5
         frames = 25
+
+        # NOTE: animation logic intentionally has NO try/except so errors surface.
         for i in range(frames + 1):
             t = i / frames
             eased = ease_out_expo(t)
@@ -515,6 +519,8 @@ class ConnectionScreen(Screen):
             status_label.styles.color = status_hex
             general_count_label.styles.color = general_hex
 
+            # force redraw of the app so the animation is visible
+            await self.app.refresh()
             await asyncio.sleep(duration / frames)
 
         # Ensure fully black final state on connection screen elements
@@ -531,12 +537,11 @@ class ConnectionScreen(Screen):
         status_label.styles.color = "#000000"
         general_count_label.styles.color = "#000000"
 
+        # ensure final black is displayed before pushing chat
+        await self.app.refresh()
+        await asyncio.sleep(0.06)
+
         # Push ChatScreen while connection UI is black
-        # IMPORTANT CHANGE:
-        # Previously we attempted to query and change chat screen widgets immediately after pushing the new screen.
-        # That caused inconsistent visual states and a "jump" instead of a smooth fade.
-        # New approach: let ChatScreen start in a black state and perform its own fade-in from black -> target.
-        # Therefore we only push the ChatScreen instance here and let its on_mount handle the fade-in.
         chat_screen = ChatScreen(username, chat_name, password)
         self.app.push_screen(chat_screen)
 
@@ -643,6 +648,9 @@ class ChatScreen(Screen):
         message_input.styles.background = "#000000"
         message_input.styles.color = "#FFFFFF"  # keep input text visible against background during fade
 
+        # force display of initial black state
+        await self.app.refresh()
+
         # Start connection in background so mount/animations are not blocked.
         asyncio.create_task(self.connect_to_server())
 
@@ -658,6 +666,8 @@ class ChatScreen(Screen):
 
         frames = 25
         duration = 0.5
+
+        # NOTE: animation logic intentionally has NO try/except so failures surface.
         for i in range(frames + 1):
             t = i / frames
             eased = ease_out_expo(t)
@@ -675,6 +685,8 @@ class ChatScreen(Screen):
             # keep message_input text color constant; set background progressively
             message_input.styles.background = bg_hex
 
+            # force redraw so each frame is visible
+            await self.app.refresh()
             await asyncio.sleep(duration / frames)
 
         # Finalize to exact target colours
@@ -686,6 +698,8 @@ class ChatScreen(Screen):
         input_container.styles.background = target_bg_hex
         messages.styles.background = target_bg_hex
         message_input.styles.background = target_bg_hex
+
+        await self.app.refresh()
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
