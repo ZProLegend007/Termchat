@@ -405,15 +405,12 @@ class ConnectionScreen(Screen):
 
     async def check_server_status(self):
     # Foolproof: check server reachability using a certifi-backed SSL context
-        try:
-            import websockets  # keep local import if desired
-            ssl_context = ssl.create_default_context(cafile=certifi.where())
-            # short timeout/ping to keep this check fast
-            ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
-            await ws.close()
-            self.server_available = True
-        except Exception:
-            self.server_available = False
+        import websockets  # keep local import if desired
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        # short timeout/ping to keep this check fast
+        ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
+        await ws.close()
+        self.server_available = True
         self.update_indicator()
 
     def update_indicator(self):
@@ -535,67 +532,15 @@ class ConnectionScreen(Screen):
         general_count_label.styles.color = "#000000"
 
         # Push ChatScreen while connection UI is black
+        # IMPORTANT CHANGE:
+        # Previously we attempted to query and change chat screen widgets immediately after pushing the new screen.
+        # That caused inconsistent visual states and a "jump" instead of a smooth fade.
+        # New approach: let ChatScreen start in a black state and perform its own fade-in from black -> target.
+        # Therefore we only push the ChatScreen instance here and let its on_mount handle the fade-in.
         chat_screen = ChatScreen(username, chat_name, password)
         self.app.push_screen(chat_screen)
 
-        # Allow a short moment for the new screen to mount
-        await asyncio.sleep(0.06)
-
-        # Query chat widgets (will raise if missing)
-        header = chat_screen.query_one("#header")
-        messages_container = chat_screen.query_one("#messages_container")
-        input_container = chat_screen.query_one("#input_container")
-        messages = chat_screen.query_one("#messages")
-        message_input = chat_screen.query_one("#message_input")
-
-        # Immediately set all chat elements to black so fade-from-black is visible
-        chat_screen.styles.background = "#000000"
-        header.styles.color = "#000000"
-        messages_container.styles.border = ("solid", "#000000")
-        messages_container.styles.background = "#000000"
-        input_container.styles.border = ("solid", "#000000")
-        input_container.styles.background = "#000000"
-        messages.styles.background = "#000000"
-        message_input.styles.background = "#000000"
-        message_input.styles.color = "#FFFFFF"  # keep input text visible against background during fade
-
-        # Determine final target colours
-        target_header_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
-        target_border_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
-        target_bg_hex = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
-
-        # Fade from black -> target over 0.5s
-        duration2 = 0.5
-        frames2 = 25
-        for i in range(frames2 + 1):
-            t = i / frames2
-            eased = ease_out_expo(t)
-            bg_hex = blend_between("#000000", target_bg_hex, eased)
-            header_hex = blend_between("#000000", target_header_hex, eased)
-            border_hex = blend_between("#000000", target_border_hex, eased)
-
-            chat_screen.styles.background = bg_hex
-            header.styles.color = header_hex
-            messages_container.styles.border = ("solid", border_hex)
-            messages_container.styles.background = bg_hex
-            input_container.styles.border = ("solid", border_hex)
-            input_container.styles.background = bg_hex
-            messages.styles.background = bg_hex
-            # keep message_input text color constant; set background progressively
-            message_input.styles.background = bg_hex
-
-            await asyncio.sleep(duration2 / frames2)
-
-        # Finalize to exact target colours
-        chat_screen.styles.background = target_bg_hex
-        header.styles.color = target_header_hex
-        messages_container.styles.border = ("solid", target_border_hex)
-        messages_container.styles.background = target_bg_hex
-        input_container.styles.border = ("solid", target_border_hex)
-        input_container.styles.background = target_bg_hex
-        messages.styles.background = target_bg_hex
-        message_input.styles.background = target_bg_hex
-
+        # Leave chat_screen fade-in and connection routines to ChatScreen.on_mount
         self.connecting = False
         
     def action_quit(self):
@@ -680,13 +625,67 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
+        # Ensure the chat screen starts fully black so the fade-in is smooth and reliable.
+        header = self.query_one("#header")
+        messages_container = self.query_one("#messages_container")
+        input_container = self.query_one("#input_container")
+        messages = self.query_one("#messages")
+        message_input = self.query_one("#message_input")
+
+        # Immediately set all chat elements to black so fade-from-black is visible
+        self.styles.background = "#000000"
+        header.styles.color = "#000000"
+        messages_container.styles.border = ("solid", "#000000")
+        messages_container.styles.background = "#000000"
+        input_container.styles.border = ("solid", "#000000")
+        input_container.styles.background = "#000000"
+        messages.styles.background = "#000000"
+        message_input.styles.background = "#000000"
+        message_input.styles.color = "#FFFFFF"  # keep input text visible against background during fade
+
         # Start connection in background so mount/animations are not blocked.
         asyncio.create_task(self.connect_to_server())
 
         # Focus the input so user can type when chat is visible
-        input_widget = self.query_one("#message_input")
+        input_widget = message_input
         input_widget.can_focus = True
         input_widget.focus()
+
+        # Perform fade-in from black -> target theme/background.
+        target_header_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
+        target_border_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
+        target_bg_hex = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
+
+        frames = 25
+        duration = 0.5
+        for i in range(frames + 1):
+            t = i / frames
+            eased = ease_out_expo(t)
+            bg_hex = blend_between("#000000", target_bg_hex, eased)
+            header_hex = blend_between("#000000", target_header_hex, eased)
+            border_hex = blend_between("#000000", target_border_hex, eased)
+
+            self.styles.background = bg_hex
+            header.styles.color = header_hex
+            messages_container.styles.border = ("solid", border_hex)
+            messages_container.styles.background = bg_hex
+            input_container.styles.border = ("solid", border_hex)
+            input_container.styles.background = bg_hex
+            messages.styles.background = bg_hex
+            # keep message_input text color constant; set background progressively
+            message_input.styles.background = bg_hex
+
+            await asyncio.sleep(duration / frames)
+
+        # Finalize to exact target colours
+        self.styles.background = target_bg_hex
+        header.styles.color = target_header_hex
+        messages_container.styles.border = ("solid", target_border_hex)
+        messages_container.styles.background = target_bg_hex
+        input_container.styles.border = ("solid", target_border_hex)
+        input_container.styles.background = target_bg_hex
+        messages.styles.background = target_bg_hex
+        message_input.styles.background = target_bg_hex
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
