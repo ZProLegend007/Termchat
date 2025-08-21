@@ -740,7 +740,7 @@ class ChatScreen(Screen):
     async def change_theme_color(self, new_color: str):
         # Change the theme color of the interface with smooth transition
         duration = 0.3  # seconds
-        target_fps = 60  # Higher fps for smoother transitions
+        target_fps = 60  # Realistic fps for smooth transitions
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
@@ -776,6 +776,9 @@ class ChatScreen(Screen):
             messages = self.query_one("#messages")
             
             # Animate the color transition with linear interpolation
+            import time
+            start_time = time.time()
+            
             for i in range(total_frames + 1):
                 t = i / total_frames
                 
@@ -807,7 +810,12 @@ class ChatScreen(Screen):
                 input_container.refresh()
                 messages.refresh()
                 
-                await asyncio.sleep(frame_time)
+                # More accurate timing
+                target_time = start_time + (i + 1) * frame_time
+                current_time = time.time()
+                sleep_time = max(0, target_time - current_time)
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
             
             # Ensure final exact colors
             scrollbar_final = rgb_to_hex(*darken_color(*end_rgb))
@@ -845,7 +853,7 @@ class ChatScreen(Screen):
     async def change_background_color(self, bg_color: str):
         # Change the background color of the entire chat interface with smooth transition
         duration = 0.6  # seconds
-        target_fps = 60  # Higher fps for smoother transitions
+        target_fps = 120  # Higher fps for smoother transitions
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
@@ -882,6 +890,9 @@ class ChatScreen(Screen):
             message_input = self.query_one("#message_input")
             
             # Animate the background color transition with linear interpolation
+            import time
+            start_time = time.time()
+            
             for i in range(total_frames + 1):
                 t = i / total_frames
                 
@@ -916,7 +927,12 @@ class ChatScreen(Screen):
                 input_container.refresh()
                 message_input.refresh()
                 
-                await asyncio.sleep(frame_time)
+                # More accurate timing
+                target_time = start_time + (i + 1) * frame_time
+                current_time = time.time()
+                sleep_time = max(0, target_time - current_time)
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
             
             # Ensure final exact colors
             dark_final = rgb_to_hex(*darken_color(*end_rgb))
