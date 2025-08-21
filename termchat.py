@@ -42,26 +42,14 @@ def launch_new_terminal():
 
     elif platform.system() == "Darwin":
         python = shlex.quote(sys.executable)
-        # Set bounds for the window (pixels)
+        # Set bounds to 1/5th of typical screen size (e.g., 2560x1600 → 512x320)
         left, top = 100, 100
-        right, bottom = left + 912, top + 520
-    
-        # Launch the script in Terminal, reusing the same window if one already exists.
-        # If no Terminal windows exist, this creates one and sets bounds.
+        right, bottom = left + 512, top + 320
         applescript = f'''
         tell application "Terminal"
             activate
-            if (count of windows) = 0 then
-                -- no windows: create a new window and run the command
-                set theResult to do script "{python} {script_path}"
-                delay 0.12
-                try
-                    set bounds of front window to {{{left}, {top}, {right}, {bottom}}}
-                end try
-            else
-                -- there is an existing window: run in the front window (creates a new tab in that window)
-                do script "{python} {script_path}" in front window
-            end if
+            set newWindow to do script "{python} {script_path}"
+            set bounds of front window to {{{left}, {top}, {right}, {bottom}}}
         end tell
         '''
         cmd = f'osascript -e {shlex.quote(applescript)}'
@@ -89,13 +77,11 @@ def launch_new_terminal():
         sys.exit(1)
         
 async def get_general_count(server_url: str) -> int:
-    # Converts wss://... to https://... and gets /general-count using certifi-backed SSL.
-    http_host = server_url.replace("wss://", "https://").split("/")[2]
-    endpoint = f"https://{http_host}/general-count"
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    # Converts wss://... to https://... and gets /general-count
+    http_url = server_url.replace("wss://", "https://").split("/")[2]
+    endpoint = f"https://{http_url}/general-count"
     try:
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session:
+        async with aiohttp.ClientSession() as session:
             async with session.get(endpoint, timeout=3) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -103,6 +89,33 @@ async def get_general_count(server_url: str) -> int:
     except Exception:
         pass
     return 0
+
+def hex_to_rgb(hex_color: str) -> tuple:
+    """Convert hex color to RGB tuple"""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def rgb_to_hex(rgb: tuple) -> str:
+    """Convert RGB tuple to hex color"""
+    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+def interpolate_color(start_color: str, end_color: str, progress: float) -> str:
+    """Interpolate between two hex colors"""
+    start_rgb = hex_to_rgb(start_color)
+    end_rgb = hex_to_rgb(end_color)
+    
+    interpolated_rgb = tuple(
+        int(start_rgb[i] + (end_rgb[i] - start_rgb[i]) * progress)
+        for i in range(3)
+    )
+    
+    return rgb_to_hex(interpolated_rgb)
+
+def darken_color(hex_color: str, factor: float = 0.8) -> str:
+    """Darken a hex color by a factor (0.0 = black, 1.0 = original)"""
+    rgb = hex_to_rgb(hex_color)
+    darkened_rgb = tuple(int(c * factor) for c in rgb)
+    return rgb_to_hex(darkened_rgb)
 
 # User colors for cycling through usernames
 USER_COLORS = [
@@ -121,7 +134,7 @@ TERMCHAT_ASCII = """
 """
 
 class SplashScreen(Screen):
-    # ASCII Art splash screen shown with a slide-up + fade-in animation
+# ASCII Art splash screen shown for 2 seconds
     
     CSS = """
     SplashScreen {
@@ -140,76 +153,12 @@ class SplashScreen(Screen):
     """
 
     def compose(self) -> ComposeResult:
-        # Create the Static so we can animate it in on_mount.
         yield Static(TERMCHAT_ASCII, id="splash")
 
     def on_mount(self):
-        # Start the splash animation asynchronously and advance when done.
-        asyncio.create_task(self._animate_and_advance())
-
-    async def _animate_and_advance(self):
-        # Animate the splash logo: slide up from below and fade in with a strong ease-out.
-        # After the animation completes we wait a short moment then move to the connection screen.
+        # Auto-advance to connection dialog after 1.25 seconds
+        self.set_timer(1.25, self.show_connection)
         
-        # Strong ease-out function (exponential) for a noticeable fast-then-slow effect
-        def ease_out_expo(t: float) -> float:
-            if t >= 1.0:
-                return 1.0
-            return 1 - pow(2, -10 * t)
-
-        # 60fps animation parameters
-        duration = 1.2
-        target_fps = 60
-        frame_time = 1.0 / target_fps
-        total_frames = int(duration * target_fps)
-        start_offset_y = 22  # start a few rows lower (slides up to 0)
-        
-        try:
-            splash = self.query_one("#splash", Static)
-            
-            # Initialize starting position and color fade
-            splash.styles.opacity = 0.0
-            splash.styles.offset = (0, start_offset_y)
-            splash.styles.color = "#000000"  # Start black for color fade
-            
-            self.refresh()
-            await asyncio.sleep(0.016)
-            
-            # 60fps animation loop - slide up AND color fade
-            for i in range(total_frames + 1):
-                t = i / total_frames
-                eased = ease_out_expo(t)
-                
-                # Slide animation
-                y = int(start_offset_y * (1 - eased))
-                opacity = float(eased)
-                
-                # Color fade animation (black to cyan)
-                r = int(135 * eased)  # #87CEEB = 135, 206, 235
-                g = int(206 * eased)
-                b = int(235 * eased)
-                color = f"#{r:02x}{g:02x}{b:02x}"
-                
-                # Apply all animations
-                splash.styles.offset = (0, y)
-                splash.styles.opacity = opacity
-                splash.styles.color = color
-                
-                splash.refresh()
-                await asyncio.sleep(frame_time)
-
-            # Ensure final exact values
-            splash.styles.offset = (0, 0)
-            splash.styles.opacity = 1.0
-            splash.styles.color = "#87CEEB"
-            splash.refresh()
-            
-        except Exception:
-            await asyncio.sleep(duration)
-
-        await asyncio.sleep(0.25)
-        self.show_connection()
-
     def show_connection(self):
         self.app.push_screen("connection")
 
@@ -221,14 +170,11 @@ class ConnectionScreen(Screen):
         super().__init__()
         self.connecting = False
         self.general_count = None
-        self.transitioning = False
         
     CSS = """
     ConnectionScreen {
         align: center middle;
         background: black;
-        opacity: 1.0;
-        offset: 0 0;
     }
     
     #dialog {
@@ -349,12 +295,10 @@ class ConnectionScreen(Screen):
         label.update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
     async def check_server_status(self):
-    # Foolproof: check server reachability using a certifi-backed SSL context
+        # Foolproof: check server reachability (simple websocket ping or http GET)
+        import websockets
         try:
-            import websockets  # keep local import if desired
-            ssl_context = ssl.create_default_context(cafile=certifi.where())
-            # short timeout/ping to keep this check fast
-            ws = await websockets.connect(self.app.server_url, ssl=ssl_context, ping_timeout=2)
+            ws = await websockets.connect(self.app.server_url, ping_timeout=2)
             await ws.close()
             self.server_available = True
         except Exception:
@@ -385,8 +329,8 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        if self.connecting or self.transitioning:
-            return  # Already connecting or transitioning
+        if self.connecting:
+            return  # Already connecting
             
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
@@ -406,110 +350,48 @@ class ConnectionScreen(Screen):
         if not password:
             password = "default"
         
-        # Start transition animation and then switch to chat
-        await self.transition_to_chat(username, chat_name, password)
-
-    async def transition_to_chat(self, username: str, chat_name: str, password: str):
-        """Fade to black transition using the EXACT same method as colourshift"""
-        self.transitioning = True
-        
-        # 60fps animation parameters
-        duration = 0.4
-        target_fps = 60
-        frame_time = 1.0 / target_fps
-        total_frames = int(duration * target_fps)
-        
+        # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
         try:
-            # Fade to black using the same method as change_theme_color
-            for i in range(total_frames + 1):
-                t = i / total_frames
-                
-                # Calculate darkness (1.0 = normal, 0.0 = black)
-                brightness = 1.0 - t
-                
-                # Calculate current colors
-                theme_r = int(135 * brightness)  # #87CEEB
-                theme_g = int(206 * brightness)
-                theme_b = int(235 * brightness)
-                theme_color = f"#{theme_r:02x}{theme_g:02x}{theme_b:02x}"
-                
-                white_intensity = int(255 * brightness)
-                text_color = f"#{white_intensity:02x}{white_intensity:02x}{white_intensity:02x}"
-                
-                gray_intensity = int(204 * brightness)  # #cccccc
-                gray_color = f"#{gray_intensity:02x}{gray_intensity:02x}{gray_intensity:02x}"
-                
-                # Apply colors exactly like change_theme_color does
-                header = self.query_one("#title")
-                header.styles.color = theme_color
-                
-                # Update dialog border
-                dialog = self.query_one("#dialog")
-                dialog.styles.border = ("solid", theme_color)
-                
-                # Update all text elements
-                self.query_one("#indicator_text").styles.color = text_color
-                self.query_one("#indicator_light").styles.color = text_color
-                self.query_one("#hint_row").styles.color = text_color
-                self.query_one("#general_count_label").styles.color = text_color
-                
-                # Update form labels
-                for label in self.query(".label"):
-                    label.styles.color = gray_color
-                
-                # Update input fields
-                for input_field in self.query(".input"):
-                    input_field.styles.color = text_color
-                
-                await asyncio.sleep(frame_time)
-            
-            # Brief pause in black
-            await asyncio.sleep(0.05)
-            
-            # Start chat with fade-in
-            self.app.start_chat_with_transition(username, chat_name, password)
-            
-        except Exception as e:
-            self.transitioning = False
             self.app.start_chat(username, chat_name, password)
+        except Exception as e:
+            # Connection failed, show error and reset
+            self.connecting = False
+            status_label.update(f"[red]Connection failed: {str(e)}[/red]")
+            self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
+
 
     def action_quit(self):
         self.app.exit()
 
 
 class ChatScreen(Screen):
-    # Main chat screen with entrance animation
-    
-    def __init__(self, username: str, chat_name: str, password: str, animate_entrance: bool = False):
-        super().__init__()
-        self.username = username
-        self.chat_name = chat_name
-        self.password = password
-        self.animate_entrance = animate_entrance
+    # Main chat screen with smooth fade-in and color transitions
     
     CSS = """
     ChatScreen {
         layout: vertical;
         background: black;
         color: white;
-        opacity: 1.0;
-        offset: 0 0;
+        transition: background 0.5s, color 0.5s;
     }
     
     #header {
         dock: top;
         height: 3;
         background: black;
-        color: #87CEEB;
+        color: black;
         content-align: center middle;
         text-style: bold;
         padding: 1 0;
+        transition: background 0.5s, color 0.5s;
     }
     
     #messages_container {
         height: 1fr;
-        border: solid #87CEEB;
+        border: solid black;
         margin: 0;
+        background: black;
+        transition: background 0.5s, border 0.5s;
     }
     
     #messages {
@@ -517,17 +399,20 @@ class ChatScreen(Screen):
         scrollbar-gutter: stable;
         border: none;
         background: black;
-        color: white;
+        color: black;
         padding: 1;
+        transition: background 0.5s, color 0.5s;
     }
     
     #input_container {
         dock: bottom;
         height: 5;
-        border: solid #87CEEB;
+        border: solid black;
         margin: 0 0 1 0;
         padding: 1;
         content-align: center middle;
+        background: black;
+        transition: background 0.5s, border 0.5s;
     }
     
     #message_input {
@@ -535,8 +420,9 @@ class ChatScreen(Screen):
         height: 3;
         border: none;
         background: black;
-        color: white;
+        color: black;
         content-align: center middle;
+        transition: background 0.5s, color 0.5s;
     }
     
     #message_input:focus {
@@ -548,6 +434,14 @@ class ChatScreen(Screen):
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
+
+    def __init__(self, username: str, chat_name: str, password: str):
+        super().__init__()
+        self.username = username
+        self.chat_name = chat_name
+        self.password = password
+        self.fade_in_complete = False
+
         
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
@@ -557,82 +451,69 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # If this is an animated entrance, start with the screen positioned down and invisible
-        if self.animate_entrance:
-            self.styles.offset = (0, 15)  # Start below
-            self.styles.opacity = 0.0
-            await self.animate_entrance_sequence()
+        # Initialize the chat screen with fade-in effect
+        # Start fade-in animation
+        await self.start_fade_in()
         
-        # Initialize the chat screen
+        # Start connection to server
         await self.connect_to_server()
         input_widget = self.query_one("#message_input")
         input_widget.can_focus = True
         input_widget.focus()
 
-    async def animate_entrance_sequence(self):
-        """Fade in from black using EXACT same method as change_theme_color"""
+    async def start_fade_in(self):
+        """Smoothly fade in all elements from black to their target colors"""
+        # Define target colors
+        target_theme_color = self.app.theme_color
+        target_bg_color = self.app.background_color if hasattr(self.app, 'background_color') else "black"
+        target_text_color = "white"
         
-        # 60fps animation parameters
-        duration = 0.4
-        target_fps = 60
-        frame_time = 1.0 / target_fps
-        total_frames = int(duration * target_fps)
+        # Fade in over 1 second with 20 steps
+        fade_steps = 20
+        fade_duration = 1.0
+        step_delay = fade_duration / fade_steps
         
-        try:
-            # Start everything at black (like the transition left it)
-            # Then fade in using the same method as change_theme_color
-            for i in range(total_frames + 1):
-                t = i / total_frames
-                
-                # Calculate brightness (0.0 = black, 1.0 = normal)
-                brightness = t
-                
-                # Calculate current colors
-                theme_r = int(135 * brightness)  # #87CEEB
-                theme_g = int(206 * brightness)
-                theme_b = int(235 * brightness)
-                theme_color = f"#{theme_r:02x}{theme_g:02x}{theme_b:02x}"
-                
-                white_intensity = int(255 * brightness)
-                white_color = f"#{white_intensity:02x}{white_intensity:02x}{white_intensity:02x}"
-                
-                # Apply colors exactly like change_theme_color does
+        for step in range(fade_steps + 1):
+            progress = step / fade_steps
+            
+            # Interpolate colors
+            current_theme = interpolate_color("black", target_theme_color, progress)
+            current_bg = interpolate_color("black", target_bg_color, progress)
+            current_text = interpolate_color("black", target_text_color, progress)
+            current_input_bg = darken_color(current_bg, 0.9)
+            
+            # Apply colors to elements
+            try:
                 header = self.query_one("#header")
-                header.styles.color = theme_color
+                header.styles.color = current_theme
+                header.styles.background = current_bg
                 
-                # Update message container border
                 messages_container = self.query_one("#messages_container")
-                messages_container.styles.border = ("solid", theme_color)
+                messages_container.styles.border = ("solid", current_theme)
+                messages_container.styles.background = current_bg
                 
-                # Update input container border  
-                input_container = self.query_one("#input_container")
-                input_container.styles.border = ("solid", theme_color)
-                
-                # Update message text color
                 messages = self.query_one("#messages")
-                messages.styles.color = white_color
+                messages.styles.background = current_bg
+                messages.styles.color = current_text
                 
-                # Update input text color
+                input_container = self.query_one("#input_container")
+                input_container.styles.border = ("solid", current_theme)
+                input_container.styles.background = current_input_bg
+                
                 message_input = self.query_one("#message_input")
-                message_input.styles.color = white_color
+                message_input.styles.background = current_input_bg
+                message_input.styles.color = current_text
                 
-                await asyncio.sleep(frame_time)
+                # Update root background
+                self.styles.background = current_bg
+                
+            except Exception:
+                # Elements might not be ready yet
+                pass
             
-            # Ensure final colors are exactly right
-            header = self.query_one("#header")
-            header.styles.color = "#87CEEB"
-            messages_container = self.query_one("#messages_container")
-            messages_container.styles.border = ("solid", "#87CEEB")
-            input_container = self.query_one("#input_container")
-            input_container.styles.border = ("solid", "#87CEEB")
-            messages = self.query_one("#messages")
-            messages.styles.color = "white"
-            message_input = self.query_one("#message_input")
-            message_input.styles.color = "white"
-            
-        except Exception:
-            # Fallback: ensure proper colors
-            pass
+            await asyncio.sleep(step_delay)
+        
+        self.fade_in_complete = True
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
@@ -808,16 +689,15 @@ class ChatScreen(Screen):
                 messages_log.write(f"[bold #87CEEB]{escape(username)} has left the chat.[/bold #87CEEB]")
         
         elif message_type == "colourshift":
-            # Handle theme color change
+            # Handle theme color change with smooth transition
             new_color = data.get("color", "#87CEEB")
-            await self.change_theme_color(new_color)
-            # messages_log.write(f"[bold {new_color}]Theme color changed to {new_color}[/bold {new_color}]")
+            await self.smooth_change_theme_color(new_color)
         
         elif message_type == "bgshift":
             messages_log = self.query_one("#messages", RichLog)
             messages_log.clear()
             bg_color = data.get("color", "#000000")
-            await self.change_background_color(bg_color)
+            await self.smooth_change_background_color(bg_color)
 
         elif message_type == "chatclear":
             messages_log = self.query_one("#messages", RichLog)
@@ -868,37 +748,95 @@ class ChatScreen(Screen):
             messages_log = self.query_one("#messages", RichLog)
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
-    async def change_theme_color(self, new_color: str):
-        # Change the theme color of the interface
-        # Update the header widget style
-        header = self.query_one("#header")
-        header.styles.color = new_color
+    async def smooth_change_theme_color(self, new_color: str):
+        """Smoothly transition theme color from current to new color"""
+        if not self.fade_in_complete:
+            return
+            
+        current_color = self.app.theme_color
+        transition_steps = 15
+        transition_duration = 0.5
+        step_delay = transition_duration / transition_steps
         
-        # Update message container border
-        messages_container = self.query_one("#messages_container")
-        messages_container.styles.border = ("solid", new_color)
+        for step in range(transition_steps + 1):
+            progress = step / transition_steps
+            interpolated_color = interpolate_color(current_color, new_color, progress)
+            
+            try:
+                # Update header color
+                header = self.query_one("#header")
+                header.styles.color = interpolated_color
+                
+                # Update borders
+                messages_container = self.query_one("#messages_container")
+                messages_container.styles.border = ("solid", interpolated_color)
+                
+                input_container = self.query_one("#input_container")
+                input_container.styles.border = ("solid", interpolated_color)
+                
+            except Exception:
+                pass
+                
+            await asyncio.sleep(step_delay)
         
-        # Update input container border  
-        input_container = self.query_one("#input_container")
-        input_container.styles.border = ("solid", new_color)
-        
-        # Store the new color in the app for future use
+        # Store the new color
         self.app.theme_color = new_color
 
+    async def smooth_change_background_color(self, new_bg_color: str):
+        """Smoothly transition background color with proper handling of input areas"""
+        if not self.fade_in_complete:
+            return
+            
+        current_bg_color = getattr(self.app, 'background_color', 'black')
+        transition_steps = 15
+        transition_duration = 0.5
+        step_delay = transition_duration / transition_steps
+        
+        for step in range(transition_steps + 1):
+            progress = step / transition_steps
+            interpolated_bg = interpolate_color(current_bg_color, new_bg_color, progress)
+            # Create darker version for input areas and scrollbars
+            darker_bg = darken_color(interpolated_bg, 0.8)
+            
+            try:
+                # Update root background
+                self.styles.background = interpolated_bg
+                
+                # Update header background
+                header = self.query_one("#header")
+                header.styles.background = interpolated_bg
+                
+                # Update messages container background
+                messages_container = self.query_one("#messages_container")
+                messages_container.styles.background = interpolated_bg
+                
+                # Update messages background (affects scrollbar area)
+                messages = self.query_one("#messages")
+                messages.styles.background = interpolated_bg
+                
+                # Update input container with darker background
+                input_container = self.query_one("#input_container")
+                input_container.styles.background = darker_bg
+                
+                # Update message input with darker background
+                message_input = self.query_one("#message_input")
+                message_input.styles.background = darker_bg
+                
+            except Exception:
+                pass
+                
+            await asyncio.sleep(step_delay)
+        
+        # Store the new background color
+        self.app.background_color = new_bg_color
+
+    async def change_theme_color(self, new_color: str):
+        # Legacy method - now calls smooth version
+        await self.smooth_change_theme_color(new_color)
+
     async def change_background_color(self, bg_color: str):
-        # Change the background color of the entire chat interface
-        # Apply to root container and message boxes
-        self.styles.background = bg_color
-        header = self.query_one("#header")
-        header.styles.background = bg_color
-        messages_container = self.query_one("#messages_container")
-        messages_container.styles.background = bg_color
-        messages = self.query_one("#messages")
-        messages.styles.background = bg_color
-        input_container = self.query_one("#input_container")
-        input_container.styles.background = bg_color
-        # Optionally, store for later reference
-        self.app.background_color = bg_color
+        # Legacy method - now calls smooth version
+        await self.smooth_change_background_color(bg_color)
 
 
 class TermchatApp(App):
@@ -916,6 +854,7 @@ class TermchatApp(App):
         self.color_index: int = 0    # For cycling through colors
         self.connected: bool = False
         self.theme_color: str = "#87CEEB"  # Current theme color
+        self.background_color: str = "black"  # Current background color
         
         # Backend server URL (HTTPS WebSocket on port 443)
         self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
@@ -925,13 +864,8 @@ class TermchatApp(App):
         self.push_screen("splash")
 
     def start_chat(self, username: str, chat_name: str, password: str):
-        # Start the chat with the given credentials (no animation)
-        chat_screen = ChatScreen(username, chat_name, password, animate_entrance=False)
-        self.push_screen(chat_screen)
-
-    def start_chat_with_transition(self, username: str, chat_name: str, password: str):
-        # Start the chat with animated entrance
-        chat_screen = ChatScreen(username, chat_name, password, animate_entrance=True)
+        # Start the chat with the given credentials
+        chat_screen = ChatScreen(username, chat_name, password)
         self.push_screen(chat_screen)
 
     def get_user_color(self, username: str) -> str:
