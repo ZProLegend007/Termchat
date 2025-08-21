@@ -219,11 +219,14 @@ class ConnectionScreen(Screen):
         super().__init__()
         self.connecting = False
         self.general_count = None
+        self.transitioning = False
         
     CSS = """
     ConnectionScreen {
         align: center middle;
         background: black;
+        opacity: 1.0;
+        offset: 0 0;
     }
     
     #dialog {
@@ -380,8 +383,8 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        if self.connecting:
-            return  # Already connecting
+        if self.connecting or self.transitioning:
+            return  # Already connecting or transitioning
             
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
@@ -401,28 +404,74 @@ class ConnectionScreen(Screen):
         if not password:
             password = "default"
         
-        # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
-        try:
-            self.app.start_chat(username, chat_name, password)
-        except Exception as e:
-            # Connection failed, show error and reset
-            self.connecting = False
-            status_label.update(f"[red]Connection failed: {str(e)}[/red]")
-            self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
+        # Start transition animation and then switch to chat
+        await self.transition_to_chat(username, chat_name, password)
 
+    async def transition_to_chat(self, username: str, chat_name: str, password: str):
+        """Animate the connection screen sliding up and fading out"""
+        self.transitioning = True
+        
+        # Ease-out function for smooth animation
+        def ease_out_cubic(t: float) -> float:
+            return 1 - pow(1 - t, 3)
+        
+        # Animation parameters
+        duration = 0.8  # seconds
+        frames = 30
+        slide_distance = -15  # negative to slide up
+        
+        try:
+            # Animate slide up and fade out
+            for i in range(frames + 1):
+                t = i / frames
+                eased = ease_out_cubic(t)
+                
+                # Calculate current position and opacity
+                current_y = int(slide_distance * eased)
+                current_opacity = 1.0 - eased
+                
+                # Apply styles
+                self.styles.offset = (0, current_y)
+                self.styles.opacity = current_opacity
+                
+                await asyncio.sleep(duration / frames)
+            
+            # Ensure final state
+            self.styles.offset = (0, slide_distance)
+            self.styles.opacity = 0.0
+            
+            # Brief pause in black
+            await asyncio.sleep(0.1)
+            
+            # Start the chat with animated entrance
+            self.app.start_chat_with_transition(username, chat_name, password)
+            
+        except Exception as e:
+            # Fallback: start chat normally if animation fails
+            self.transitioning = False
+            self.app.start_chat(username, chat_name, password)
 
     def action_quit(self):
         self.app.exit()
 
 
 class ChatScreen(Screen):
-    # Main chat screen
+    # Main chat screen with entrance animation
+    
+    def __init__(self, username: str, chat_name: str, password: str, animate_entrance: bool = False):
+        super().__init__()
+        self.username = username
+        self.chat_name = chat_name
+        self.password = password
+        self.animate_entrance = animate_entrance
     
     CSS = """
     ChatScreen {
         layout: vertical;
         background: black;
         color: white;
+        opacity: 1.0;
+        offset: 0 0;
     }
     
     #header {
@@ -477,13 +526,6 @@ class ChatScreen(Screen):
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
-
-    def __init__(self, username: str, chat_name: str, password: str):
-        super().__init__()
-        self.username = username
-        self.chat_name = chat_name
-        self.password = password
-
         
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
@@ -493,12 +535,53 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
+        # If this is an animated entrance, start with the screen positioned down and invisible
+        if self.animate_entrance:
+            self.styles.offset = (0, 15)  # Start below
+            self.styles.opacity = 0.0
+            await self.animate_entrance_sequence()
+        
         # Initialize the chat screen
-        # Start connection to server
         await self.connect_to_server()
         input_widget = self.query_one("#message_input")
         input_widget.can_focus = True
         input_widget.focus()
+
+    async def animate_entrance_sequence(self):
+        """Animate the chat screen sliding down and fading in"""
+        # Ease-out function for smooth animation
+        def ease_out_cubic(t: float) -> float:
+            return 1 - pow(1 - t, 3)
+        
+        # Animation parameters
+        duration = 0.8  # seconds
+        frames = 30
+        start_y = 15  # Start position (down)
+        
+        try:
+            # Animate slide down and fade in
+            for i in range(frames + 1):
+                t = i / frames
+                eased = ease_out_cubic(t)
+                
+                # Calculate current position and opacity
+                current_y = int(start_y * (1 - eased))
+                current_opacity = eased
+                
+                # Apply styles
+                self.styles.offset = (0, current_y)
+                self.styles.opacity = current_opacity
+                
+                await asyncio.sleep(duration / frames)
+            
+            # Ensure final state
+            self.styles.offset = (0, 0)
+            self.styles.opacity = 1.0
+            
+        except Exception:
+            # Fallback: ensure screen is visible
+            self.styles.offset = (0, 0)
+            self.styles.opacity = 1.0
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
@@ -527,7 +610,6 @@ class ChatScreen(Screen):
 
     def action_quit(self):
         self.app.action_quit()
-
 
     async def connect_to_server(self):
         # Establish WebSocket connection to the backend
@@ -792,8 +874,13 @@ class TermchatApp(App):
         self.push_screen("splash")
 
     def start_chat(self, username: str, chat_name: str, password: str):
-        # Start the chat with the given credentials
-        chat_screen = ChatScreen(username, chat_name, password)
+        # Start the chat with the given credentials (no animation)
+        chat_screen = ChatScreen(username, chat_name, password, animate_entrance=False)
+        self.push_screen(chat_screen)
+
+    def start_chat_with_transition(self, username: str, chat_name: str, password: str):
+        # Start the chat with animated entrance
+        chat_screen = ChatScreen(username, chat_name, password, animate_entrance=True)
         self.push_screen(chat_screen)
 
     def get_user_color(self, username: str) -> str:
