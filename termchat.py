@@ -148,63 +148,65 @@ class SplashScreen(Screen):
         asyncio.create_task(self._animate_and_advance())
 
     async def _animate_and_advance(self):
-
         # Animate the splash logo: slide up from below and fade in with a strong ease-out.
         # After the animation completes we wait a short moment then move to the connection screen.
-        # Query the splash widget
-        try:
-            splash = self.query_one("#splash", Static)
-        except Exception:
-            # Fallback: if widget isn't present, just advance
-            self.show_connection()
-            return
-
+        
         # Strong ease-out function (exponential) for a noticeable fast-then-slow effect
         def ease_out_expo(t: float) -> float:
             if t >= 1.0:
                 return 1.0
-            # 1 - 2^(-10t) gives a very noticeable ease out
             return 1 - pow(2, -20 * t)
 
-        # Animation parameters
-        duration = 1.2   # seconds (long enough to notice)
-        frames = 40       # smoothness
-        start_offset_y =  22  # start a few rows lower (slides up to 0)
+        # 60fps animation parameters
+        duration = 1.2
+        target_fps = 60
+        frame_time = 1.0 / target_fps
+        total_frames = int(duration * target_fps)
+        start_offset_y = 25  # start a few rows lower (slides up to 0)
         
-        # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
-        use_styles = True
         try:
-            # initialize
+            splash = self.query_one("#splash", Static)
+            
+            # Initialize starting position and color fade
             splash.styles.opacity = 0.0
             splash.styles.offset = (0, start_offset_y)
-        except Exception:
-            use_styles = False
-
-        if use_styles:
-            for i in range(frames + 1):
-                t = i / frames
+            splash.styles.color = "#000000"  # Start black for color fade
+            
+            self.refresh()
+            await asyncio.sleep(0.016)
+            
+            # 60fps animation loop - slide up AND color fade
+            for i in range(total_frames + 1):
+                t = i / total_frames
                 eased = ease_out_expo(t)
+                
+                # Slide animation
                 y = int(start_offset_y * (1 - eased))
                 opacity = float(eased)
-                try:
-                    splash.styles.offset = (0, y)
-                    splash.styles.opacity = opacity
-                except Exception:
-                    # If styles stop working mid-animation, break out and finalize.
-                    break
-                await asyncio.sleep(duration / frames)
+                
+                # Color fade animation (black to cyan)
+                r = int(135 * eased)  # #87CEEB = 135, 206, 235
+                g = int(206 * eased)
+                b = int(235 * eased)
+                color = f"#{r:02x}{g:02x}{b:02x}"
+                
+                # Apply all animations
+                splash.styles.offset = (0, y)
+                splash.styles.opacity = opacity
+                splash.styles.color = color
+                
+                splash.refresh()
+                await asyncio.sleep(frame_time)
 
             # Ensure final exact values
-            try:
-                splash.styles.offset = (0, 0)
-                splash.styles.opacity = 1.0
-            except Exception:
-                pass
-        else:
-            # Fallback: simple timed pause so the splash is visible, without animation.
+            splash.styles.offset = (0, 0)
+            splash.styles.opacity = 1.0
+            splash.styles.color = "#87CEEB"
+            splash.refresh()
+            
+        except Exception:
             await asyncio.sleep(duration)
 
-        # Short pause so the user sees the final state, then advance to connection screen.
         await asyncio.sleep(0.25)
         self.show_connection()
 
