@@ -22,67 +22,7 @@ import subprocess
 import shlex
 import aiohttp
 
-# Color helpers - paste immediately after imports (after `import aiohttp`)
-NAMED_COLORS = {
-    "black": "#000000",
-    "white": "#FFFFFF",
-    "red": "#FF0000",
-    "green": "#00FF00",
-    "yellow": "#FFFF00",
-    "magenta": "#FF00FF",
-    "cyan": "#00FFFF",
-    "bright_red": "#FF5555",
-    "bright_yellow": "#FFFF55",
-    "bright_magenta": "#FF55FF",
-    "bright_cyan": "#55FFFF",
-    "bright_green": "#55FF55",
-    "bright_blue": "#5555FF",
-    "termchat_default": "#87CEEB",
-}
 
-def normalize_hex(s: str) -> str:
-    """Return a normalized 6-char hex like '#RRGGBB' for a color name or hex-like string."""
-    if not s:
-        return "#000000"
-    s = str(s).strip()
-    if "#" in s:
-        idx = s.find("#")
-        h = s[idx:idx+7]
-        if len(h) == 7:
-            return h.upper()
-    if s.lower() in NAMED_COLORS:
-        return NAMED_COLORS[s.lower()].upper()
-    parts = s.split()
-    for p in parts:
-        if p.startswith("#") and len(p) >= 7:
-            return p[:7].upper()
-    return "#000000"
-
-def hex_to_rgb(h: str):
-    h = normalize_hex(h).lstrip("#")
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-
-def rgb_to_hex(rgb):
-    return "#{:02X}{:02X}{:02X}".format(
-        max(0, min(255, int(rgb[0]))),
-        max(0, min(255, int(rgb[1]))),
-        max(0, min(255, int(rgb[2])))
-    )
-
-def blend_between(hex_from: str, hex_to: str, t: float) -> str:
-    """Linear blend from hex_from -> hex_to at t (0..1)."""
-    r1, g1, b1 = hex_to_rgb(hex_from)
-    r2, g2, b2 = hex_to_rgb(hex_to)
-    r = int(r1 + (r2 - r1) * t)
-    g = int(g1 + (g2 - g1) * t)
-    b = int(b1 + (b2 - b1) * t)
-    return rgb_to_hex((r, g, b))
-
-def ease_out_expo(t: float) -> float:
-    if t >= 1.0:
-        return 1.0
-    return 1 - pow(2, -12 * t)
-    
 def is_in_terminal():
     # Heuristically check if we're running in a real terminal.
     return sys.stdin.isatty()
@@ -241,34 +181,25 @@ class SplashScreen(Screen):
             use_styles = False
 
         if use_styles:
-            # NOTE: animation logic intentionally contains NO try/except so failures surface.
             for i in range(frames + 1):
                 t = i / frames
                 eased = ease_out_expo(t)
                 y = int(start_offset_y * (1 - eased))
                 opacity = float(eased)
-
-                splash.styles.offset = (0, y)
-                splash.styles.opacity = opacity
-
-                # force a redraw so terminal shows each step
-                # call refresh on the App (synchronous) rather than awaiting it — awaiting self.app.refresh()
-                # can raise if refresh is not a coroutine in the running textual version.
                 try:
-                    # keep surrounding try only for safety of the refresh API call, not the animation steps
-                    self.app.refresh()
+                    splash.styles.offset = (0, y)
+                    splash.styles.opacity = opacity
                 except Exception:
-                    # If refresh isn't available, still yield to the event loop to allow render
-                    await asyncio.sleep(0)
+                    # If styles stop working mid-animation, break out and finalize.
+                    break
                 await asyncio.sleep(duration / frames)
 
             # Ensure final exact values
-            splash.styles.offset = (0, 0)
-            splash.styles.opacity = 1.0
             try:
-                self.app.refresh()
+                splash.styles.offset = (0, 0)
+                splash.styles.opacity = 1.0
             except Exception:
-                await asyncio.sleep(0)
+                pass
         else:
             # Fallback: simple timed pause so the splash is visible, without animation.
             await asyncio.sleep(duration)
@@ -402,10 +333,7 @@ class ConnectionScreen(Screen):
         yield Label("", id="general_count_label")
 
     def on_mount(self):
-        try:
-            self.query_one("#username_input").focus()
-        except Exception:
-            pass
+        self.query_one("#username_input").focus()
         self.set_timer(0.1, self.check_server_status)
         asyncio.create_task(self.update_general_count())
 
@@ -416,7 +344,7 @@ class ConnectionScreen(Screen):
         label.update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
     async def check_server_status(self):
-        # Foolproof: check server reachability using a certifi-backed SSL context
+    # Foolproof: check server reachability using a certifi-backed SSL context
         try:
             import websockets  # keep local import if desired
             ssl_context = ssl.create_default_context(cafile=certifi.where())
@@ -452,121 +380,37 @@ class ConnectionScreen(Screen):
             await self.action_connect()
 
     async def action_connect(self):
-        # Fade connection screen elements to black then show chat and fade back to theme.
-        if getattr(self, "connecting", False):
-            return
-        self.connecting = True
-
+        if self.connecting:
+            return  # Already connecting
+            
         username = self.query_one("#username_input").value.strip()
         chat_name = self.query_one("#chatname_input").value.strip()
         password = self.query_one("#password_input").value.strip()
-
+        
+        # Only check for forbidden username, no empty field warnings
         if username.lower() == "server":
             self.app.notify("Username 'server' is forbidden!", severity="error")
             self.query_one("#username_input").focus()
-            self.connecting = False
             return
-
+        
+        # Use defaults if fields are empty
         if not username:
             username = "guest"
         if not chat_name:
             chat_name = "general"
         if not password:
             password = "default"
-
-        # Query connection-screen widgets (will raise if missing)
-        dialog = self.query_one("#dialog")
-        title = self.query_one("#title")
-        indicator_light = self.query_one("#indicator_light")
-        indicator_text = self.query_one("#indicator_text")
-        form = self.query_one("#form")
-        status_label = self.query_one("#status_label")
-        general_count_label = self.query_one("#general_count_label")
-        username_input = self.query_one("#username_input")
-        chatname_input = self.query_one("#chatname_input")
-        password_input = self.query_one("#password_input")
-
-        # Define start colours for each element (match your CSS defaults)
-        theme_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
-        start = {
-            "dialog_border": theme_hex,
-            "title": theme_hex,
-            "indicator": "#FFFFFF",
-            "label": "#CCCCCC",
-            "input_border": "#333333",
-            "status": "#FFFF00",
-            "general_count": "#90EE90",
-        }
-
-        # Fade duration to black (0.5s) — use frames so step is visible
-        duration = 0.5
-        frames = 25
-
-        # NOTE: animation logic intentionally has NO try/except so errors surface.
-        for i in range(frames + 1):
-            t = i / frames
-            eased = ease_out_expo(t)
-            border_hex = blend_between(start["dialog_border"], "#000000", eased)
-            title_hex = blend_between(start["title"], "#000000", eased)
-            indicator_hex = blend_between(start["indicator"], "#000000", eased)
-            label_hex = blend_between(start["label"], "#000000", eased)
-            input_border_hex = blend_between(start["input_border"], "#000000", eased)
-            status_hex = blend_between(start["status"], "#000000", eased)
-            general_hex = blend_between(start["general_count"], "#000000", eased)
-
-            dialog.styles.border = ("solid", border_hex)
-            dialog.styles.background = blend_between("black", "#000000", eased)  # keep black -> black but explicit
-            title.styles.color = title_hex
-            indicator_light.styles.color = indicator_hex
-            indicator_text.styles.color = indicator_hex
-
-            # Set all form labels (classes="label") to label_hex
-            for lbl in self.query(".label"):
-                lbl.styles.color = label_hex
-
-            # Inputs: set border colour
-            username_input.styles.border = ("solid", input_border_hex)
-            chatname_input.styles.border = ("solid", input_border_hex)
-            password_input.styles.border = ("solid", input_border_hex)
-
-            status_label.styles.color = status_hex
-            general_count_label.styles.color = general_hex
-
-            # force redraw of the app so the animation is visible
-            try:
-                self.app.refresh()
-            except Exception:
-                await asyncio.sleep(0)
-            await asyncio.sleep(duration / frames)
-
-        # Ensure fully black final state on connection screen elements
-        dialog.styles.border = ("solid", "#000000")
-        dialog.styles.background = "#000000"
-        title.styles.color = "#000000"
-        indicator_light.styles.color = "#000000"
-        indicator_text.styles.color = "#000000"
-        for lbl in self.query(".label"):
-            lbl.styles.color = "#000000"
-        username_input.styles.border = ("solid", "#000000")
-        chatname_input.styles.border = ("solid", "#000000")
-        password_input.styles.border = ("solid", "#000000")
-        status_label.styles.color = "#000000"
-        general_count_label.styles.color = "#000000"
-
-        # ensure final black is displayed before pushing chat
-        try:
-            self.app.refresh()
-        except Exception:
-            await asyncio.sleep(0)
-        await asyncio.sleep(0.06)
-
-        # Push ChatScreen while connection UI is black
-        chat_screen = ChatScreen(username, chat_name, password)
-        self.app.push_screen(chat_screen)
-
-        # Leave chat_screen fade-in and connection routines to ChatScreen.on_mount
-        self.connecting = False
         
+        # Start the chat directly - no separate test connection to avoid duplicate join/leave notifications
+        try:
+            self.app.start_chat(username, chat_name, password)
+        except Exception as e:
+            # Connection failed, show error and reset
+            self.connecting = False
+            status_label.update(f"[red]Connection failed: {str(e)}[/red]")
+            self.app.notify(f"Could not connect to server: {str(e)}", severity="error")
+
+
     def action_quit(self):
         self.app.exit()
 
@@ -649,85 +493,12 @@ class ChatScreen(Screen):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        # Ensure the chat screen starts fully black so the fade-in is smooth and reliable.
-        header = self.query_one("#header")
-        messages_container = self.query_one("#messages_container")
-        input_container = self.query_one("#input_container")
-        messages = self.query_one("#messages")
-        message_input = self.query_one("#message_input")
-
-        # Immediately set all chat elements to black so fade-from-black is visible
-        self.styles.background = "#000000"
-        header.styles.color = "#000000"
-        messages_container.styles.border = ("solid", "#000000")
-        messages_container.styles.background = "#000000"
-        input_container.styles.border = ("solid", "#000000")
-        input_container.styles.background = "#000000"
-        messages.styles.background = "#000000"
-        message_input.styles.background = "#000000"
-        message_input.styles.color = "#FFFFFF"  # keep input text visible against background during fade
-
-        # force display of initial black state
-        try:
-            self.app.refresh()
-        except Exception:
-            await asyncio.sleep(0)
-
-        # Start connection in background so mount/animations are not blocked.
-        asyncio.create_task(self.connect_to_server())
-
-        # Focus the input so user can type when chat is visible
-        input_widget = message_input
+        # Initialize the chat screen
+        # Start connection to server
+        await self.connect_to_server()
+        input_widget = self.query_one("#message_input")
         input_widget.can_focus = True
         input_widget.focus()
-
-        # Perform fade-in from black -> target theme/background.
-        target_header_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
-        target_border_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
-        target_bg_hex = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
-
-        frames = 25
-        duration = 0.5
-
-        # NOTE: animation logic intentionally has NO try/except so failures surface.
-        for i in range(frames + 1):
-            t = i / frames
-            eased = ease_out_expo(t)
-            bg_hex = blend_between("#000000", target_bg_hex, eased)
-            header_hex = blend_between("#000000", target_header_hex, eased)
-            border_hex = blend_between("#000000", target_border_hex, eased)
-
-            self.styles.background = bg_hex
-            header.styles.color = header_hex
-            messages_container.styles.border = ("solid", border_hex)
-            messages_container.styles.background = bg_hex
-            input_container.styles.border = ("solid", border_hex)
-            input_container.styles.background = bg_hex
-            messages.styles.background = bg_hex
-            # keep message_input text color constant; set background progressively
-            message_input.styles.background = bg_hex
-
-            # force redraw so each frame is visible
-            try:
-                self.app.refresh()
-            except Exception:
-                await asyncio.sleep(0)
-            await asyncio.sleep(duration / frames)
-
-        # Finalize to exact target colours
-        self.styles.background = target_bg_hex
-        header.styles.color = target_header_hex
-        messages_container.styles.border = ("solid", target_border_hex)
-        messages_container.styles.background = target_bg_hex
-        input_container.styles.border = ("solid", target_border_hex)
-        input_container.styles.background = target_bg_hex
-        messages.styles.background = target_bg_hex
-        message_input.styles.background = target_bg_hex
-
-        try:
-            self.app.refresh()
-        except Exception:
-            await asyncio.sleep(0)
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
@@ -861,7 +632,7 @@ class ChatScreen(Screen):
                 except json.JSONDecodeError:
                     messages_log.write(f"[bold red]Received invalid JSON: {escape(message[:100])}...[/bold red]")
                 except Exception as e:
-                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red']")
+                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red]")
         except websockets.exceptions.ConnectionClosed:
             messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
             self.app.connected = False
@@ -965,34 +736,22 @@ class ChatScreen(Screen):
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
     async def change_theme_color(self, new_color: str):
-        # Direct blend from current app.theme_color -> new_color (no black)
-        current_hex = normalize_hex(getattr(self.app, "theme_color", "#87CEEB") or "#87CEEB")
-        target_hex = normalize_hex(new_color or "#87CEEB")
-
+        # Change the theme color of the interface
+        # Update the header widget style
         header = self.query_one("#header")
+        header.styles.color = new_color
+        
+        # Update message container border
         messages_container = self.query_one("#messages_container")
+        messages_container.styles.border = ("solid", new_color)
+        
+        # Update input container border  
         input_container = self.query_one("#input_container")
-        messages = self.query_one("#messages")
+        input_container.styles.border = ("solid", new_color)
+        
+        # Store the new color in the app for future use
+        self.app.theme_color = new_color
 
-        frames = 25
-        duration = 0.5
-        for i in range(frames + 1):
-            t = i / frames
-            eased = ease_out_expo(t)
-            header_hex = blend_between(current_hex, target_hex, eased)
-            border_hex = blend_between(current_hex, target_hex, eased)
-            bg_target = normalize_hex(getattr(self.app, "background_color", "#000000") or "#000000")
-            # keep background unchanged by colourshift (only header/borders change)
-            header.styles.color = header_hex
-            messages_container.styles.border = ("solid", border_hex)
-            input_container.styles.border = ("solid", border_hex)
-            await asyncio.sleep(duration / frames)
-
-        # finalize
-        self.app.theme_color = target_hex
-        header.styles.color = target_hex
-        messages_container.styles.border = ("solid", target_hex)
-        input_container.styles.border = ("solid", target_hex)
     async def change_background_color(self, bg_color: str):
         # Change the background color of the entire chat interface
         # Apply to root container and message boxes
