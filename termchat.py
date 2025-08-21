@@ -740,7 +740,7 @@ class ChatScreen(Screen):
     async def change_theme_color(self, new_color: str):
         # Change the theme color of the interface with smooth transition
         duration = 0.3  # seconds
-        target_fps = 120  # Higher fps for smoother transitions
+        target_fps = 60  # Higher fps for smoother transitions
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
@@ -845,7 +845,7 @@ class ChatScreen(Screen):
     async def change_background_color(self, bg_color: str):
         # Change the background color of the entire chat interface with smooth transition
         duration = 0.6  # seconds
-        target_fps = 120  # Higher fps for smoother transitions
+        target_fps = 60  # Higher fps for smoother transitions
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
