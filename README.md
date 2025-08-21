@@ -2,7 +2,7 @@
 
 # Termchat
 
-Cross-platform Python terminal chat client. Tons of fun features, easy to use, and works over https for availability on all networks! (Even school!)
+Cross-platform chat client. Tons of fun features, easy to use, and works over https for availability on all networks! (Even school!)
 
 ## Features
 
@@ -27,44 +27,12 @@ On windows you may have to tell smartscreen to 'run anyway'
 On MacOS you may have to follow some steps to be able to run the app (see Pre-Release instructions)
 Linux hasn't been tested yet but assumed working!
 
-**Or**
-
-Run the unpackaged chat client directly using python:
-```bash
-python3 termchat.py
-```
-
-The script will prompt you for:
-- **Username**: Your display name in the chat
-- **Chat name**: The chat room to join
-- **Password**: Password for the chat room
-
-Each combination of chat name and password creates/joins a new room. You can have multiple chats of the same name, but in order to join the same one as someone else the password must be the same!
-
-## Chat Interface
-
-Once connected, you'll see messages in the format:
-```
-A wild Username2 has appeared.
-[Username1]: Hello
-[Username2]: Hey there
-```
-
 ## Commands
 
 - `/quit`, `/exit`, `/q`: Exit the chat
 - `/clear`: Clear the message box/chat area
 - `Ctrl+Q`: Exit termchat
+- Run /help for more!
 
-## Requirements
-
-None! (Unless you are running the python script;)
-
-If you are running the script directly you will need;
-- Python 3.7+
-- websockets library
-- textual
-
-## Backend
 
 Connects to a server hosted on azure. All information is passed through directly and is not stored.
