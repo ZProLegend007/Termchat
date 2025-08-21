@@ -3,9 +3,9 @@ name: Build Windows EXE
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ SlintOverhaul ]
   pull_request:
-    branches: [ main ]
+    branches: [ SlintOverhaul ]
   workflow_dispatch:
 
 env:
