@@ -740,7 +740,7 @@ class ChatScreen(Screen):
     async def change_theme_color(self, new_color: str):
         # Change the theme color of the interface with smooth transition
         duration = 0.3  # seconds
-        target_fps = 60
+        target_fps = 120  # Higher fps for smoother transitions
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
@@ -757,14 +757,23 @@ class ChatScreen(Screen):
         def rgb_to_hex(r, g, b):
             return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
         
+        def darken_color(r, g, b, factor=0.5):
+            # Make color darker for scrollbar
+            return (r * factor, g * factor, b * factor)
+        
         start_rgb = hex_to_rgb(current_color)
         end_rgb = hex_to_rgb(new_color)
+        
+        # Calculate scrollbar colors
+        start_scrollbar_rgb = darken_color(*start_rgb)
+        end_scrollbar_rgb = darken_color(*end_rgb)
         
         try:
             # Get references to elements
             header = self.query_one("#header")
             messages_container = self.query_one("#messages_container")
             input_container = self.query_one("#input_container")
+            messages = self.query_one("#messages")
             
             # Animate the color transition with linear interpolation
             for i in range(total_frames + 1):
@@ -775,44 +784,68 @@ class ChatScreen(Screen):
                 g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t
                 b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t
                 
+                # Linear interpolation of scrollbar RGB values
+                scroll_r = start_scrollbar_rgb[0] + (end_scrollbar_rgb[0] - start_scrollbar_rgb[0]) * t
+                scroll_g = start_scrollbar_rgb[1] + (end_scrollbar_rgb[1] - start_scrollbar_rgb[1]) * t
+                scroll_b = start_scrollbar_rgb[2] + (end_scrollbar_rgb[2] - start_scrollbar_rgb[2]) * t
+                
                 current_color = rgb_to_hex(r, g, b)
+                current_scrollbar = rgb_to_hex(scroll_r, scroll_g, scroll_b)
                 
                 # Apply the color to all theme elements
                 header.styles.color = current_color
                 messages_container.styles.border = ("solid", current_color)
                 input_container.styles.border = ("solid", current_color)
                 
+                # Apply scrollbar colors (controlled by theme, not background)
+                messages.styles.scrollbar_background = current_color
+                messages.styles.scrollbar_color = current_scrollbar
+                
                 # Refresh the display
                 header.refresh()
                 messages_container.refresh()
                 input_container.refresh()
+                messages.refresh()
                 
                 await asyncio.sleep(frame_time)
             
-            # Ensure final exact color
+            # Ensure final exact colors
+            scrollbar_final = rgb_to_hex(*darken_color(*end_rgb))
+            
             header.styles.color = new_color
             messages_container.styles.border = ("solid", new_color)
             input_container.styles.border = ("solid", new_color)
+            
+            # Set final scrollbar colors
+            messages.styles.scrollbar_background = new_color
+            messages.styles.scrollbar_color = scrollbar_final
             
             # Store the new color in the app for future use
             self.app.theme_color = new_color
             
         except Exception:
             # Fallback to instant change if animation fails
+            scrollbar_bg = rgb_to_hex(*darken_color(*end_rgb))
+            
             header = self.query_one("#header")
             messages_container = self.query_one("#messages_container")
             input_container = self.query_one("#input_container")
+            messages = self.query_one("#messages")
             
             header.styles.color = new_color
             messages_container.styles.border = ("solid", new_color)
             input_container.styles.border = ("solid", new_color)
+            
+            # Set scrollbar colors in fallback
+            messages.styles.scrollbar_background = new_color
+            messages.styles.scrollbar_color = scrollbar_bg
             
             self.app.theme_color = new_color
     
     async def change_background_color(self, bg_color: str):
         # Change the background color of the entire chat interface with smooth transition
         duration = 0.6  # seconds
-        target_fps = 60
+        target_fps = 120  # Higher fps for smoother transitions
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
@@ -833,24 +866,12 @@ class ChatScreen(Screen):
             # Make color darker by multiplying by factor
             return (r * factor, g * factor, b * factor)
         
-        def scrollbar_color(r, g, b, factor=0.5):
-            # Make color much darker for scrollbar
-            return (r * factor, g * factor, b * factor)
-        
         start_rgb = hex_to_rgb(current_bg)
         end_rgb = hex_to_rgb(bg_color)
         
-        # Calculate darker versions for scrollbars and input areas
+        # Calculate darker versions for input areas
         start_dark_rgb = darken_color(*start_rgb)
         end_dark_rgb = darken_color(*end_rgb)
-        
-        # Calculate scrollbar colors (even darker)
-        start_scrollbar_rgb = scrollbar_color(*start_rgb)
-        end_scrollbar_rgb = scrollbar_color(*end_rgb)
-        
-        # Ease-out function for smooth transition
-        def ease_out_cubic(t):
-            return 1 - pow(1 - t, 3)
         
         try:
             # Get references to elements
@@ -860,20 +881,19 @@ class ChatScreen(Screen):
             input_container = self.query_one("#input_container")
             message_input = self.query_one("#message_input")
             
-            # Animate the background color transition
+            # Animate the background color transition with linear interpolation
             for i in range(total_frames + 1):
                 t = i / total_frames
-                eased = ease_out_cubic(t)
                 
-                # Interpolate main background RGB values
-                r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * eased
-                g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * eased
-                b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * eased
+                # Linear interpolation of main background RGB values
+                r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t
+                g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t
+                b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t
                 
-                # Interpolate darker background RGB values
-                dark_r = start_dark_rgb[0] + (end_dark_rgb[0] - start_dark_rgb[0]) * eased
-                dark_g = start_dark_rgb[1] + (end_dark_rgb[1] - start_dark_rgb[1]) * eased
-                dark_b = start_dark_rgb[2] + (end_dark_rgb[2] - start_dark_rgb[2]) * eased
+                # Linear interpolation of darker background RGB values
+                dark_r = start_dark_rgb[0] + (end_dark_rgb[0] - start_dark_rgb[0]) * t
+                dark_g = start_dark_rgb[1] + (end_dark_rgb[1] - start_dark_rgb[1]) * t
+                dark_b = start_dark_rgb[2] + (end_dark_rgb[2] - start_dark_rgb[2]) * t
                 
                 current_bg = rgb_to_hex(r, g, b)
                 current_dark = rgb_to_hex(dark_r, dark_g, dark_b)
@@ -888,10 +908,6 @@ class ChatScreen(Screen):
                 # Apply darker background to input area
                 message_input.styles.background = current_dark
                 
-                # Apply scrollbar colors to messages widget
-                messages.styles.scrollbar_background = current_dark
-                messages.styles.scrollbar_color = current_scrollbar
-                
                 # Refresh all elements
                 self.refresh()
                 header.refresh()
@@ -904,7 +920,6 @@ class ChatScreen(Screen):
             
             # Ensure final exact colors
             dark_final = rgb_to_hex(*darken_color(*end_rgb))
-            scrollbar_final = rgb_to_hex(*scrollbar_color(*end_rgb))
             
             self.styles.background = bg_color
             header.styles.background = bg_color
@@ -912,10 +927,6 @@ class ChatScreen(Screen):
             messages.styles.background = bg_color
             input_container.styles.background = bg_color
             message_input.styles.background = dark_final
-            
-            # Set final scrollbar colors
-            messages.styles.scrollbar_background = dark_final
-            messages.styles.scrollbar_color = scrollbar_final
             
             # Store the new color in the app for future use
             self.app.background_color = bg_color
