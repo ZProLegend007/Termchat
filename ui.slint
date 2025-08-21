@@ -1,0 +1,185 @@
+export component MainWindow inherits Window {
+    width: 1000px;
+    height: 720px;
+    title: "TERMCHAT - Slint";
+
+    // Model from Rust
+    in property <string> messages[];
+    in property <bool> connected;
+    in property <string> header_text;
+    in property <string> theme_color;
+    in property <string> background_color;
+    in property <int> general_count;
+
+    // Callbacks implemented in Rust
+    callback connect(username: string, chat: string, password: string);
+    callback send_message(text: string);
+    callback disconnect();
+    callback poll_network();
+    callback request_general_count();
+
+    // Internal state for UI flow
+    property bool show_splash := true;
+    Timer {
+        interval: 1200ms;
+        running: true;
+        triggered => {
+            // hide splash after interval
+            root.show_splash = false;
+        }
+    }
+
+    // Polling timer (drains incoming network events)
+    Timer {
+        interval: 200ms;
+        running: true;
+        triggered => {
+            root.poll_network();
+            // request general count when on connection screen (do once)
+            if (root.general_count == -1) {
+                root.request_general_count();
+            }
+        }
+    }
+
+    preferred-min-width: 800px;
+    preferred-min-height: 600px;
+
+    // Main layout
+    StackLayout {
+        // Splash layer
+        Rectangle {
+            visible: root.show_splash;
+            background: #000000;
+            Text {
+                text: "TERMCHAT";
+                font-size: 48px;
+                color: #87CEEB;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                font-weight: bold;
+            }
+        }
+
+        // Main app layer
+        VerticalLayout {
+            visible: !root.show_splash;
+            spacing: 10px;
+            padding: 12px;
+            background: root.background_color;
+
+            // Header
+            Frame {
+                height: 48px;
+                background: root.background_color;
+                horizontal-alignment: center;
+                Text {
+                    text: root.header_text;
+                    color: root.theme_color;
+                    font-weight: bold;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Connection box
+            Rectangle {
+                width: 1fr;
+                height: 94px;
+                border-width: 2px;
+                border-color: root.theme_color;
+                radius: 6px;
+                padding: 8px;
+                VerticalLayout {
+                    spacing: 6px;
+                    HorizontalLayout {
+                        spacing: 8px;
+
+                        Text { text: "Username:"; color: root.theme_color; width: 80px; vertical-alignment: center; }
+                        TextInput { id: username_input; placeholder-text: "guest"; width: 200px; }
+
+                        Text { text: "Chat:"; color: root.theme_color; width: 50px; vertical-alignment: center; }
+                        TextInput { id: chat_input; placeholder-text: "general"; width: 140px; }
+
+                        Text { text: "Password:"; color: root.theme_color; width: 70px; vertical-alignment: center; }
+                        TextInput { id: password_input; placeholder-text: "default"; width: 140px; echo-mode: Password; }
+
+                        Button {
+                            text: "Connect";
+                            enabled: !root.connected;
+                            clicked => root.connect(username_input.text, chat_input.text, password_input.text);
+                        }
+                        Button {
+                            text: "Disconnect";
+                            enabled: root.connected;
+                            clicked => root.disconnect();
+                        }
+                    }
+
+                    // indicator row
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: if root.connected then "●" else "○";
+                            color: if root.connected then #00ff00 else #ff0000;
+                        }
+                        Text { text: if root.connected then "Server available" else "Not connected"; color: root.theme_color; }
+                        Stretch {}
+                        Text { text: (if root.general_count >= 0 then (root.general_count.to_string() + " users in general") else "checking..."); color: #90ee90; }
+                    }
+                }
+            }
+
+            // Messages area
+            Frame {
+                width: 1fr;
+                height: 1fr;
+                border-width: 2px;
+                border-color: root.theme_color;
+                radius: 6px;
+                background: root.background_color;
+                VerticalLayout {
+                    spacing: 6px;
+                    padding: 8px;
+                    ScrollView {
+                        id: scroll;
+                        vertical: true;
+                        ListView {
+                            model: root.messages;
+                            delegate: Text {
+                                text: index;
+                                wrap: true;
+                                color: #ffffff;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Input row
+            HorizontalLayout {
+                spacing: 8px;
+                TextInput {
+                    id: message_input;
+                    placeholder-text: "Type your message here...";
+                    width: 1fr;
+                    on-return-key-pressed => {
+                        if (message_input.text.trim() != "") {
+                            root.send_message(message_input.text);
+                            message_input.text = "";
+                        }
+                    }
+                }
+                Button {
+                    text: "Send";
+                    clicked => {
+                        if (message_input.text.trim() != "") {
+                            root.send_message(message_input.text);
+                            message_input.text = "";
+                        }
+                    }
+                    enabled: root.connected;
+                }
+            }
+        }
+    }
+}
