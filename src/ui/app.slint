@@ -1,0 +1,406 @@
+import { Button, VerticalBox, HorizontalBox, LineEdit, ScrollView, TextEdit, ListView } from "std-widgets.slint";
+
+// Color constants
+global Colors {
+    out property <color> primary: #87CEEB;
+    out property <color> background: #000000;
+    out property <color> text: #FFFFFF;
+    out property <color> input-bg: #333333;
+    out property <color> border: #87CEEB;
+    out property <color> success: #00FF00;
+    out property <color> error: #FF0000;
+    out property <color> warning: #FFFF00;
+}
+
+component SplashScreen inherits Rectangle {
+    callback splash-complete();
+    
+    width: 100%;
+    height: 100%;
+    background: Colors.background;
+    
+    property <bool> animation-started: false;
+    property <float> logo-opacity: 0.0;
+    property <float> logo-y-offset: 50px;
+    
+    states [
+        animate-in when animation-started : {
+            logo-opacity: 1.0;
+            logo-y-offset: 0px;
+            in {
+                animate logo-opacity { duration: 1200ms; easing: ease-out-expo; }
+                animate logo-y-offset { duration: 1200ms; easing: ease-out-expo; }
+            }
+        }
+    ]
+    
+    VerticalBox {
+        alignment: center;
+        Text {
+            text: "████████ ███████ ██████  ███    ███  ██████ ██   ██  █████  ████████ \n   ██    ██      ██   ██ ████  ████ ██      ██   ██ ██   ██    ██    \n   ██    █████   ██████  ██ ████ ██ ██      ███████ ███████    ██    \n   ██    ██      ██   ██ ██  ██  ██ ██      ██   ██ ██   ██    ██    \n   ██    ███████ ██   ██ ██      ██  ██████ ██   ██ ██   ██    ██    ";
+            color: Colors.primary;
+            font-family: "monospace";
+            font-size: 12px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            opacity: logo-opacity;
+            y: logo-y-offset;
+        }
+    }
+    
+    Timer {
+        interval: 100ms;
+        running: true;
+        triggered => {
+            animation-started = true;
+        }
+    }
+    
+    Timer {
+        interval: 1500ms;
+        running: animation-started;
+        triggered => {
+            splash-complete();
+        }
+    }
+}
+
+component ConnectionScreen inherits Rectangle {
+    callback connect-requested(string, string, string);
+    callback quit-requested();
+    
+    in property <string> server-status: "Checking server...";
+    in property <bool> server-available: false;
+    in property <int> general-count: 0;
+    
+    width: 100%;
+    height: 100%;
+    background: Colors.background;
+    
+    VerticalBox {
+        alignment: center;
+        padding: 20px;
+        
+        Rectangle {
+            width: 600px;
+            height: 400px;
+            border-width: 2px;
+            border-color: Colors.border;
+            background: Colors.background;
+            
+            VerticalBox {
+                padding: 20px;
+                spacing: 20px;
+                
+                // Title
+                Text {
+                    text: "TERMCHAT Connection";
+                    color: Colors.primary;
+                    font-size: 24px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+                
+                // Server status indicator
+                HorizontalBox {
+                    alignment: center;
+                    spacing: 10px;
+                    
+                    Rectangle {
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 6px;
+                        background: server-available ? Colors.success : Colors.error;
+                    }
+                    
+                    Text {
+                        text: server-status;
+                        color: server-available ? Colors.success : Colors.error;
+                        font-size: 14px;
+                    }
+                }
+                
+                // Hint text
+                Text {
+                    text: "Keep the chat name and password blank to join the general chat";
+                    color: #CCCCCC;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                
+                // General chat user count
+                Text {
+                    text: @tr("{} user/s in general chat", general-count);
+                    color: #90EE90;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
+                
+                // Form
+                VerticalBox {
+                    spacing: 15px;
+                    
+                    HorizontalBox {
+                        spacing: 10px;
+                        alignment: start;
+                        
+                        Text {
+                            text: "Username:";
+                            color: #CCCCCC;
+                            font-weight: 700;
+                            width: 120px;
+                            vertical-alignment: center;
+                        }
+                        
+                        username-input := LineEdit {
+                            placeholder-text: "Enter username";
+                            width: 300px;
+                        }
+                    }
+                    
+                    HorizontalBox {
+                        spacing: 10px;
+                        alignment: start;
+                        
+                        Text {
+                            text: "Chat name:";
+                            color: #CCCCCC;
+                            font-weight: 700;
+                            width: 120px;
+                            vertical-alignment: center;
+                        }
+                        
+                        chatname-input := LineEdit {
+                            placeholder-text: "Enter chat name";
+                            width: 300px;
+                        }
+                    }
+                    
+                    HorizontalBox {
+                        spacing: 10px;
+                        alignment: start;
+                        
+                        Text {
+                            text: "Password:";
+                            color: #CCCCCC;
+                            font-weight: 700;
+                            width: 120px;
+                            vertical-alignment: center;
+                        }
+                        
+                        password-input := LineEdit {
+                            placeholder-text: "Enter password";
+                            input-type: password;
+                            width: 300px;
+                        }
+                    }
+                }
+                
+                // Connect button
+                HorizontalBox {
+                    alignment: center;
+                    
+                    Button {
+                        text: "Connect";
+                        primary: true;
+                        clicked => {
+                            connect-requested(username-input.text, chatname-input.text, password-input.text);
+                        }
+                    }
+                    
+                    Button {
+                        text: "Quit";
+                        clicked => {
+                            quit-requested();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Handle Enter key
+    username-input.accepted => {
+        chatname-input.focus();
+    }
+    
+    chatname-input.accepted => {
+        password-input.focus();
+    }
+    
+    password-input.accepted => {
+        connect-requested(username-input.text, chatname-input.text, password-input.text);
+    }
+}
+
+struct ChatMessage {
+    username: string,
+    content: string,
+    color: color,
+    is-server: bool,
+}
+
+component MessageItem inherits Rectangle {
+    in property <ChatMessage> message;
+    
+    width: 100%;
+    height: message-text.preferred-height + 10px;
+    
+    HorizontalBox {
+        padding: 5px;
+        spacing: 5px;
+        
+        if message.is-server : Text {
+            text: @tr("Server: {}", message.content);
+            color: Colors.primary;
+            font-weight: 700;
+            wrap: word-wrap;
+        }
+        
+        if !message.is-server : Text {
+            text: @tr("[{}]: {}", message.username, message.content);
+            color: message.color;
+            wrap: word-wrap;
+        }
+        
+        message-text := Text { visible: false; } // Helper for height calculation
+    }
+}
+
+component ChatScreen inherits Rectangle {
+    callback send-message(string);
+    callback quit-requested();
+    callback clear-messages();
+    
+    in property <string> chat-name: "general";
+    in property <string> connection-status: "Connected";
+    in property <[ChatMessage]> messages: [];
+    
+    width: 100%;
+    height: 100%;
+    background: Colors.background;
+    
+    VerticalBox {
+        // Header
+        Rectangle {
+            height: 60px;
+            background: Colors.background;
+            border-bottom-width: 2px;
+            border-bottom-color: Colors.border;
+            
+            Text {
+                text: @tr("TERMCHAT - {}: '{}'", connection-status, chat-name);
+                color: Colors.primary;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        
+        // Messages area
+        Rectangle {
+            border-width: 2px;
+            border-color: Colors.border;
+            background: Colors.background;
+            
+            ScrollView {
+                viewport-width: 100%;
+                viewport-height: messages.length * 30px; // Approximate height
+                
+                VerticalBox {
+                    for message in messages : MessageItem {
+                        message: message;
+                    }
+                }
+            }
+        }
+        
+        // Input area
+        Rectangle {
+            height: 80px;
+            border-width: 2px;
+            border-color: Colors.border;
+            background: Colors.background;
+            
+            HorizontalBox {
+                padding: 15px;
+                spacing: 10px;
+                alignment: stretch;
+                
+                message-input := LineEdit {
+                    placeholder-text: "Type your message here...";
+                    horizontal-stretch: 1;
+                }
+                
+                Button {
+                    text: "Send";
+                    clicked => {
+                        if (message-input.text != "") {
+                            send-message(message-input.text);
+                            message-input.text = "";
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Handle Enter key in input
+    message-input.accepted => {
+        if (message-input.text != "") {
+            send-message(message-input.text);
+            message-input.text = "";
+        }
+    }
+    
+    // Focus input on load
+    init => {
+        message-input.focus();
+    }
+}
+
+export component App inherits Window {
+    callback splash-complete();
+    callback connect-requested(string, string, string);
+    callback send-message(string);
+    callback quit-requested();
+    callback clear-messages();
+    
+    in property <string> current-screen: "splash";
+    in property <string> server-status: "Checking server...";
+    in property <bool> server-available: false;
+    in property <int> general-count: 0;
+    in property <string> chat-name: "general";
+    in property <string> connection-status: "Connected";
+    in property <[ChatMessage]> messages: [];
+    
+    title: "TERMCHAT";
+    width: 800px;
+    height: 600px;
+    
+    if current-screen == "splash" : SplashScreen {
+        splash-complete => { splash-complete(); }
+    }
+    
+    if current-screen == "connection" : ConnectionScreen {
+        server-status: server-status;
+        server-available: server-available;
+        general-count: general-count;
+        connect-requested(username, chatname, password) => { 
+            connect-requested(username, chatname, password); 
+        }
+        quit-requested => { quit-requested(); }
+    }
+    
+    if current-screen == "chat" : ChatScreen {
+        chat-name: chat-name;
+        connection-status: connection-status;
+        messages: messages;
+        send-message(msg) => { send-message(msg); }
+        quit-requested => { quit-requested(); }
+        clear-messages => { clear-messages(); }
+    }
+}
