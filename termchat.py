@@ -251,14 +251,24 @@ class SplashScreen(Screen):
                 splash.styles.offset = (0, y)
                 splash.styles.opacity = opacity
 
-                # force a refresh so terminal shows each step
-                await self.app.refresh()
+                # force a redraw so terminal shows each step
+                # call refresh on the App (synchronous) rather than awaiting it — awaiting self.app.refresh()
+                # can raise if refresh is not a coroutine in the running textual version.
+                try:
+                    # keep surrounding try only for safety of the refresh API call, not the animation steps
+                    self.app.refresh()
+                except Exception:
+                    # If refresh isn't available, still yield to the event loop to allow render
+                    await asyncio.sleep(0)
                 await asyncio.sleep(duration / frames)
 
             # Ensure final exact values
             splash.styles.offset = (0, 0)
             splash.styles.opacity = 1.0
-            await self.app.refresh()
+            try:
+                self.app.refresh()
+            except Exception:
+                await asyncio.sleep(0)
         else:
             # Fallback: simple timed pause so the splash is visible, without animation.
             await asyncio.sleep(duration)
@@ -392,7 +402,10 @@ class ConnectionScreen(Screen):
         yield Label("", id="general_count_label")
 
     def on_mount(self):
-        self.query_one("#username_input").focus()
+        try:
+            self.query_one("#username_input").focus()
+        except Exception:
+            pass
         self.set_timer(0.1, self.check_server_status)
         asyncio.create_task(self.update_general_count())
 
@@ -520,7 +533,10 @@ class ConnectionScreen(Screen):
             general_count_label.styles.color = general_hex
 
             # force redraw of the app so the animation is visible
-            await self.app.refresh()
+            try:
+                self.app.refresh()
+            except Exception:
+                await asyncio.sleep(0)
             await asyncio.sleep(duration / frames)
 
         # Ensure fully black final state on connection screen elements
@@ -538,7 +554,10 @@ class ConnectionScreen(Screen):
         general_count_label.styles.color = "#000000"
 
         # ensure final black is displayed before pushing chat
-        await self.app.refresh()
+        try:
+            self.app.refresh()
+        except Exception:
+            await asyncio.sleep(0)
         await asyncio.sleep(0.06)
 
         # Push ChatScreen while connection UI is black
@@ -649,7 +668,10 @@ class ChatScreen(Screen):
         message_input.styles.color = "#FFFFFF"  # keep input text visible against background during fade
 
         # force display of initial black state
-        await self.app.refresh()
+        try:
+            self.app.refresh()
+        except Exception:
+            await asyncio.sleep(0)
 
         # Start connection in background so mount/animations are not blocked.
         asyncio.create_task(self.connect_to_server())
@@ -686,7 +708,10 @@ class ChatScreen(Screen):
             message_input.styles.background = bg_hex
 
             # force redraw so each frame is visible
-            await self.app.refresh()
+            try:
+                self.app.refresh()
+            except Exception:
+                await asyncio.sleep(0)
             await asyncio.sleep(duration / frames)
 
         # Finalize to exact target colours
@@ -699,7 +724,10 @@ class ChatScreen(Screen):
         messages.styles.background = target_bg_hex
         message_input.styles.background = target_bg_hex
 
-        await self.app.refresh()
+        try:
+            self.app.refresh()
+        except Exception:
+            await asyncio.sleep(0)
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
@@ -833,7 +861,7 @@ class ChatScreen(Screen):
                 except json.JSONDecodeError:
                     messages_log.write(f"[bold red]Received invalid JSON: {escape(message[:100])}...[/bold red]")
                 except Exception as e:
-                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red]")
+                    messages_log.write(f"[bold red]Error processing message: {e}[/bold red']")
         except websockets.exceptions.ConnectionClosed:
             messages_log.write("[bold yellow]Connection to server lost.[/bold yellow]")
             self.app.connected = False
