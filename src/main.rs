@@ -10,9 +10,8 @@ use tokio::time::{sleep, Duration};
 
 slint::include_modules!();
 
-use app_state::{AppState, AppEvent, Screen};
+use app_state::{AppState, AppEvent};
 use colors::UserColors;
-use message::{ServerMessage, ClientMessage};
 use websocket::WebSocketManager;
 
 const SERVER_URL: &str = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net";
@@ -23,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak = app.as_weak();
     
     let (event_sender, mut event_receiver) = mpsc::unbounded_channel::<AppEvent>();
-    let app_state = Arc::new(Mutex::new(AppState::new()));
+    let _app_state = Arc::new(Mutex::new(AppState::new()));
     let user_colors = Arc::new(Mutex::new(UserColors::new()));
     let messages_model = ModelRc::new(VecModel::<ChatMessage>::default());
     
@@ -148,8 +147,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .unwrap().set_vec(vec![]);
                         }
                     }
-                    
-                    _ => {}
                 }
             }
         }
