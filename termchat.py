@@ -737,113 +737,113 @@ class ChatScreen(Screen):
             messages_log = self.query_one("#messages", RichLog)
             messages_log.write("[bold yellow]Not connected to server. Cannot send message.[/bold yellow]")
 
-async def change_theme_color(self, new_color: str):
-    # Change the theme color of the interface with smooth transition
-    duration = 0.6  # seconds
-    target_fps = 60
-    frame_time = 1.0 / target_fps
-    total_frames = int(duration * target_fps)
-    
-    # Get current color (default to current theme color)
-    current_color = self.app.theme_color
-    
-    # Parse colors to RGB
-    def hex_to_rgb(hex_color):
-        hex_color = hex_color.lstrip('#')
-        if len(hex_color) == 6:
-            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        return (135, 206, 235)  # Default cyan fallback
-    
-    def rgb_to_hex(r, g, b):
-        return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
-    
-    start_rgb = hex_to_rgb(current_color)
-    end_rgb = hex_to_rgb(new_color)
-    
-    # Ease-out function for smooth transition
-    def ease_out_cubic(t):
-        return 1 - pow(1 - t, 3)
-    
-    try:
-        # Get references to elements
-        header = self.query_one("#header")
-        messages_container = self.query_one("#messages_container")
-        input_container = self.query_one("#input_container")
+    async def change_theme_color(self, new_color: str):
+        # Change the theme color of the interface with smooth transition
+        duration = 0.6  # seconds
+        target_fps = 60
+        frame_time = 1.0 / target_fps
+        total_frames = int(duration * target_fps)
         
-        # Animate the color transition
-        for i in range(total_frames + 1):
-            t = i / total_frames
-            eased = ease_out_cubic(t)
+        # Get current color (default to current theme color)
+        current_color = self.app.theme_color
+        
+        # Parse colors to RGB
+        def hex_to_rgb(hex_color):
+            hex_color = hex_color.lstrip('#')
+            if len(hex_color) == 6:
+                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            return (135, 206, 235)  # Default cyan fallback
+        
+        def rgb_to_hex(r, g, b):
+            return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+        
+        start_rgb = hex_to_rgb(current_color)
+        end_rgb = hex_to_rgb(new_color)
+        
+        # Ease-out function for smooth transition
+        def ease_out_cubic(t):
+            return 1 - pow(1 - t, 3)
+        
+        try:
+            # Get references to elements
+            header = self.query_one("#header")
+            messages_container = self.query_one("#messages_container")
+            input_container = self.query_one("#input_container")
             
-            # Interpolate RGB values
-            r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * eased
-            g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * eased
-            b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * eased
+            # Animate the color transition
+            for i in range(total_frames + 1):
+                t = i / total_frames
+                eased = ease_out_cubic(t)
+                
+                # Interpolate RGB values
+                r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * eased
+                g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * eased
+                b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * eased
+                
+                current_color = rgb_to_hex(r, g, b)
+                
+                # Apply the color to all theme elements
+                header.styles.color = current_color
+                messages_container.styles.border = ("solid", current_color)
+                input_container.styles.border = ("solid", current_color)
+                
+                # Refresh the display
+                header.refresh()
+                messages_container.refresh()
+                input_container.refresh()
+                
+                await asyncio.sleep(frame_time)
             
-            current_color = rgb_to_hex(r, g, b)
+            # Ensure final exact color
+            header.styles.color = new_color
+            messages_container.styles.border = ("solid", new_color)
+            input_container.styles.border = ("solid", new_color)
             
-            # Apply the color to all theme elements
-            header.styles.color = current_color
-            messages_container.styles.border = ("solid", current_color)
-            input_container.styles.border = ("solid", current_color)
+            # Store the new color in the app for future use
+            self.app.theme_color = new_color
             
-            # Refresh the display
-            header.refresh()
-            messages_container.refresh()
-            input_container.refresh()
+        except Exception:
+            # Fallback to instant change if animation fails
+            header = self.query_one("#header")
+            messages_container = self.query_one("#messages_container")
+            input_container = self.query_one("#input_container")
             
-            await asyncio.sleep(frame_time)
+            header.styles.color = new_color
+            messages_container.styles.border = ("solid", new_color)
+            input_container.styles.border = ("solid", new_color)
+            
+            self.app.theme_color = new_color
+    
+    async def change_background_color(self, bg_color: str):
+        # Change the background color of the entire chat interface with smooth transition
+        duration = 0.6  # seconds
+        target_fps = 60
+        frame_time = 1.0 / target_fps
+        total_frames = int(duration * target_fps)
         
-        # Ensure final exact color
-        header.styles.color = new_color
-        messages_container.styles.border = ("solid", new_color)
-        input_container.styles.border = ("solid", new_color)
+        # Get current background color (default to black)
+        current_bg = getattr(self.app, 'background_color', '#000000')
         
-        # Store the new color in the app for future use
-        self.app.theme_color = new_color
+        # Parse colors to RGB
+        def hex_to_rgb(hex_color):
+            hex_color = hex_color.lstrip('#')
+            if len(hex_color) == 6:
+                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            return (0, 0, 0)  # Default black fallback
         
-    except Exception:
-        # Fallback to instant change if animation fails
-        header = self.query_one("#header")
-        messages_container = self.query_one("#messages_container")
-        input_container = self.query_one("#input_container")
+        def rgb_to_hex(r, g, b):
+            return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
         
-        header.styles.color = new_color
-        messages_container.styles.border = ("solid", new_color)
-        input_container.styles.border = ("solid", new_color)
+        def darken_color(r, g, b, factor=0.7):
+            # Make color darker by multiplying by factor
+            return (r * factor, g * factor, b * factor)
         
-        self.app.theme_color = new_color
-
-async def change_background_color(self, bg_color: str):
-    # Change the background color of the entire chat interface with smooth transition
-    duration = 0.6  # seconds
-    target_fps = 60
-    frame_time = 1.0 / target_fps
-    total_frames = int(duration * target_fps)
-    
-    # Get current background color (default to black)
-    current_bg = getattr(self.app, 'background_color', '#000000')
-    
-    # Parse colors to RGB
-    def hex_to_rgb(hex_color):
-        hex_color = hex_color.lstrip('#')
-        if len(hex_color) == 6:
-            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        return (0, 0, 0)  # Default black fallback
-    
-    def rgb_to_hex(r, g, b):
-        return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
-    
-    def darken_color(r, g, b, factor=0.7):
-        # Make color darker by multiplying by factor
-        return (r * factor, g * factor, b * factor)
-    
-    start_rgb = hex_to_rgb(current_bg)
-    end_rgb = hex_to_rgb(bg_color)
-    
-    # Calculate darker versions for scrollbars and input areas
-    start_dark_rgb = darken_color(*start_rgb)
-    end_dark_rgb = darken_color(*end_rgb)
+        start_rgb = hex_to_rgb(current_bg)
+        end_rgb = hex_to_rgb(bg_color)
+        
+        # Calculate darker versions for scrollbars and input areas
+        start_dark_rgb = darken_color(*start_rgb)
+        end_dark_rgb = darken_color(*end_rgb)
     
     # Ease-out function for smooth transition
     def ease_out_cubic(t):
