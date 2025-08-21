@@ -7,10 +7,10 @@ edition = "2021"
 slint = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tokio-tungstenite = "0.20.0"
-tungstenite = { version = "0.20.0", features = ["rustls-tls"] }
+tungstenite = { version = "0.20.0", features = ["__rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.11", features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.11", features = ["blocking", "json", "__rustls-tls"] }
 crossbeam-channel = "0.5"
 futures-util = "0.3"
 url = "2.4"
