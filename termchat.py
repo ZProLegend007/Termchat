@@ -845,86 +845,86 @@ class ChatScreen(Screen):
         start_dark_rgb = darken_color(*start_rgb)
         end_dark_rgb = darken_color(*end_rgb)
     
-    # Ease-out function for smooth transition
-    def ease_out_cubic(t):
-        return 1 - pow(1 - t, 3)
-    
-    try:
-        # Get references to elements
-        header = self.query_one("#header")
-        messages_container = self.query_one("#messages_container")
-        messages = self.query_one("#messages")
-        input_container = self.query_one("#input_container")
-        message_input = self.query_one("#message_input")
+        # Ease-out function for smooth transition
+        def ease_out_cubic(t):
+            return 1 - pow(1 - t, 3)
         
-        # Animate the background color transition
-        for i in range(total_frames + 1):
-            t = i / total_frames
-            eased = ease_out_cubic(t)
+        try:
+            # Get references to elements
+            header = self.query_one("#header")
+            messages_container = self.query_one("#messages_container")
+            messages = self.query_one("#messages")
+            input_container = self.query_one("#input_container")
+            message_input = self.query_one("#message_input")
             
-            # Interpolate main background RGB values
-            r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * eased
-            g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * eased
-            b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * eased
+            # Animate the background color transition
+            for i in range(total_frames + 1):
+                t = i / total_frames
+                eased = ease_out_cubic(t)
+                
+                # Interpolate main background RGB values
+                r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * eased
+                g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * eased
+                b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * eased
+                
+                # Interpolate darker background RGB values
+                dark_r = start_dark_rgb[0] + (end_dark_rgb[0] - start_dark_rgb[0]) * eased
+                dark_g = start_dark_rgb[1] + (end_dark_rgb[1] - start_dark_rgb[1]) * eased
+                dark_b = start_dark_rgb[2] + (end_dark_rgb[2] - start_dark_rgb[2]) * eased
+                
+                current_bg = rgb_to_hex(r, g, b)
+                current_dark = rgb_to_hex(dark_r, dark_g, dark_b)
+                
+                # Apply the main background color
+                self.styles.background = current_bg
+                header.styles.background = current_bg
+                messages_container.styles.background = current_bg
+                messages.styles.background = current_bg
+                input_container.styles.background = current_bg
+                
+                # Apply darker background to input area
+                message_input.styles.background = current_dark
+                
+                # Refresh all elements
+                self.refresh()
+                header.refresh()
+                messages_container.refresh()
+                messages.refresh()
+                input_container.refresh()
+                message_input.refresh()
+                
+                await asyncio.sleep(frame_time)
             
-            # Interpolate darker background RGB values
-            dark_r = start_dark_rgb[0] + (end_dark_rgb[0] - start_dark_rgb[0]) * eased
-            dark_g = start_dark_rgb[1] + (end_dark_rgb[1] - start_dark_rgb[1]) * eased
-            dark_b = start_dark_rgb[2] + (end_dark_rgb[2] - start_dark_rgb[2]) * eased
+            # Ensure final exact colors
+            dark_final = rgb_to_hex(*darken_color(*end_rgb))
             
-            current_bg = rgb_to_hex(r, g, b)
-            current_dark = rgb_to_hex(dark_r, dark_g, dark_b)
+            self.styles.background = bg_color
+            header.styles.background = bg_color
+            messages_container.styles.background = bg_color
+            messages.styles.background = bg_color
+            input_container.styles.background = bg_color
+            message_input.styles.background = dark_final
             
-            # Apply the main background color
-            self.styles.background = current_bg
-            header.styles.background = current_bg
-            messages_container.styles.background = current_bg
-            messages.styles.background = current_bg
-            input_container.styles.background = current_bg
+            # Store the new color in the app for future use
+            self.app.background_color = bg_color
             
-            # Apply darker background to input area
-            message_input.styles.background = current_dark
+        except Exception:
+            # Fallback to instant change if animation fails
+            dark_bg = rgb_to_hex(*darken_color(*end_rgb))
             
-            # Refresh all elements
-            self.refresh()
-            header.refresh()
-            messages_container.refresh()
-            messages.refresh()
-            input_container.refresh()
-            message_input.refresh()
+            self.styles.background = bg_color
+            header = self.query_one("#header")
+            header.styles.background = bg_color
+            messages_container = self.query_one("#messages_container")
+            messages_container.styles.background = bg_color
+            messages = self.query_one("#messages")
+            messages.styles.background = bg_color
+            input_container = self.query_one("#input_container")
+            input_container.styles.background = bg_color
+            message_input = self.query_one("#message_input")
+            message_input.styles.background = dark_bg
             
-            await asyncio.sleep(frame_time)
-        
-        # Ensure final exact colors
-        dark_final = rgb_to_hex(*darken_color(*end_rgb))
-        
-        self.styles.background = bg_color
-        header.styles.background = bg_color
-        messages_container.styles.background = bg_color
-        messages.styles.background = bg_color
-        input_container.styles.background = bg_color
-        message_input.styles.background = dark_final
-        
-        # Store the new color in the app for future use
-        self.app.background_color = bg_color
-        
-    except Exception:
-        # Fallback to instant change if animation fails
-        dark_bg = rgb_to_hex(*darken_color(*end_rgb))
-        
-        self.styles.background = bg_color
-        header = self.query_one("#header")
-        header.styles.background = bg_color
-        messages_container = self.query_one("#messages_container")
-        messages_container.styles.background = bg_color
-        messages = self.query_one("#messages")
-        messages.styles.background = bg_color
-        input_container = self.query_one("#input_container")
-        input_container.styles.background = bg_color
-        message_input = self.query_one("#message_input")
-        message_input.styles.background = dark_bg
-        
-        self.app.background_color = bg_color
+            self.app.background_color = bg_color
 
 class TermchatApp(App):
     # Main Termchat application using proper screen management
