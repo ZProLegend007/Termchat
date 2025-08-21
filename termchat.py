@@ -739,102 +739,64 @@ class ChatScreen(Screen):
 
     async def change_theme_color(self, new_color: str):
         # Change the theme color of the interface with smooth transition
-        duration = 0.3  # seconds
-        target_fps = 60  # Realistic fps for smooth transitions
-        frame_time = 1.0 / target_fps
-        total_frames = int(duration * target_fps)
+        duration = 0.3
+        steps = 30  # Fewer, larger steps for smoother performance
+        frame_time = duration / steps
         
-        # Get current color (default to current theme color)
+        # Get current color
         current_color = self.app.theme_color
         
-        # Parse colors to RGB
         def hex_to_rgb(hex_color):
             hex_color = hex_color.lstrip('#')
             if len(hex_color) == 6:
                 return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-            return (135, 206, 235)  # Default cyan fallback
+            return (135, 206, 235)
         
         def rgb_to_hex(r, g, b):
             return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
         
-        def darken_color(r, g, b, factor=0.5):
-            # Make color darker for scrollbar
-            return (r * factor, g * factor, b * factor)
-        
         start_rgb = hex_to_rgb(current_color)
         end_rgb = hex_to_rgb(new_color)
         
-        # Calculate scrollbar colors
-        start_scrollbar_rgb = darken_color(*start_rgb)
-        end_scrollbar_rgb = darken_color(*end_rgb)
-        
         try:
-            # Get references to elements
             header = self.query_one("#header")
             messages_container = self.query_one("#messages_container")
             input_container = self.query_one("#input_container")
             messages = self.query_one("#messages")
             
-            # Animate the color transition with linear interpolation
-            import time
-            start_time = time.time()
-            
-            for i in range(total_frames + 1):
-                t = i / total_frames
+            for i in range(steps + 1):
+                t = i / steps
                 
-                # Linear interpolation of RGB values
+                # Linear interpolation
                 r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t
                 g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t
                 b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t
                 
-                # Linear interpolation of scrollbar RGB values
-                scroll_r = start_scrollbar_rgb[0] + (end_scrollbar_rgb[0] - start_scrollbar_rgb[0]) * t
-                scroll_g = start_scrollbar_rgb[1] + (end_scrollbar_rgb[1] - start_scrollbar_rgb[1]) * t
-                scroll_b = start_scrollbar_rgb[2] + (end_scrollbar_rgb[2] - start_scrollbar_rgb[2]) * t
-                
                 current_color = rgb_to_hex(r, g, b)
-                current_scrollbar = rgb_to_hex(scroll_r, scroll_g, scroll_b)
+                scrollbar_color = rgb_to_hex(r * 0.5, g * 0.5, b * 0.5)
                 
-                # Apply the color to all theme elements
+                # Update all at once
                 header.styles.color = current_color
                 messages_container.styles.border = ("solid", current_color)
                 input_container.styles.border = ("solid", current_color)
-                
-                # Apply scrollbar colors (controlled by theme, not background)
                 messages.styles.scrollbar_background = current_color
-                messages.styles.scrollbar_color = current_scrollbar
+                messages.styles.scrollbar_color = scrollbar_color
                 
-                # Refresh the display
-                header.refresh()
-                messages_container.refresh()
-                input_container.refresh()
-                messages.refresh()
-                
-                # More accurate timing
-                target_time = start_time + (i + 1) * frame_time
-                current_time = time.time()
-                sleep_time = max(0, target_time - current_time)
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
+                # Single refresh call
+                self.refresh()
+                await asyncio.sleep(frame_time)
             
-            # Ensure final exact colors
-            scrollbar_final = rgb_to_hex(*darken_color(*end_rgb))
-            
+            # Final values
             header.styles.color = new_color
             messages_container.styles.border = ("solid", new_color)
             input_container.styles.border = ("solid", new_color)
-            
-            # Set final scrollbar colors
             messages.styles.scrollbar_background = new_color
-            messages.styles.scrollbar_color = scrollbar_final
+            messages.styles.scrollbar_color = rgb_to_hex(*(x * 0.5 for x in end_rgb))
             
-            # Store the new color in the app for future use
             self.app.theme_color = new_color
             
         except Exception:
-            # Fallback to instant change if animation fails
-            scrollbar_bg = rgb_to_hex(*darken_color(*end_rgb))
-            
+            # Instant fallback
             header = self.query_one("#header")
             messages_container = self.query_one("#messages_container")
             input_container = self.query_one("#input_container")
@@ -843,99 +805,64 @@ class ChatScreen(Screen):
             header.styles.color = new_color
             messages_container.styles.border = ("solid", new_color)
             input_container.styles.border = ("solid", new_color)
-            
-            # Set scrollbar colors in fallback
             messages.styles.scrollbar_background = new_color
-            messages.styles.scrollbar_color = scrollbar_bg
+            messages.styles.scrollbar_color = rgb_to_hex(*(x * 0.5 for x in hex_to_rgb(new_color)))
             
             self.app.theme_color = new_color
     
     async def change_background_color(self, bg_color: str):
         # Change the background color of the entire chat interface with smooth transition
-        duration = 0.6  # seconds
-        target_fps = 120  # Higher fps for smoother transitions
-        frame_time = 1.0 / target_fps
-        total_frames = int(duration * target_fps)
+        duration = 0.6
+        steps = 60  # Fewer, larger steps for smoother performance
+        frame_time = duration / steps
         
-        # Get current background color (default to black)
+        # Get current background color
         current_bg = getattr(self.app, 'background_color', '#000000')
         
-        # Parse colors to RGB
         def hex_to_rgb(hex_color):
             hex_color = hex_color.lstrip('#')
             if len(hex_color) == 6:
                 return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-            return (0, 0, 0)  # Default black fallback
+            return (0, 0, 0)
         
         def rgb_to_hex(r, g, b):
             return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
         
-        def darken_color(r, g, b, factor=0.7):
-            # Make color darker by multiplying by factor
-            return (r * factor, g * factor, b * factor)
-        
         start_rgb = hex_to_rgb(current_bg)
         end_rgb = hex_to_rgb(bg_color)
         
-        # Calculate darker versions for input areas
-        start_dark_rgb = darken_color(*start_rgb)
-        end_dark_rgb = darken_color(*end_rgb)
-        
         try:
-            # Get references to elements
             header = self.query_one("#header")
             messages_container = self.query_one("#messages_container")
             messages = self.query_one("#messages")
             input_container = self.query_one("#input_container")
             message_input = self.query_one("#message_input")
             
-            # Animate the background color transition with linear interpolation
-            import time
-            start_time = time.time()
-            
-            for i in range(total_frames + 1):
-                t = i / total_frames
+            for i in range(steps + 1):
+                t = i / steps
                 
-                # Linear interpolation of main background RGB values
+                # Linear interpolation
                 r = start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t
                 g = start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t
                 b = start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t
                 
-                # Linear interpolation of darker background RGB values
-                dark_r = start_dark_rgb[0] + (end_dark_rgb[0] - start_dark_rgb[0]) * t
-                dark_g = start_dark_rgb[1] + (end_dark_rgb[1] - start_dark_rgb[1]) * t
-                dark_b = start_dark_rgb[2] + (end_dark_rgb[2] - start_dark_rgb[2]) * t
-                
                 current_bg = rgb_to_hex(r, g, b)
-                current_dark = rgb_to_hex(dark_r, dark_g, dark_b)
+                current_dark = rgb_to_hex(r * 0.7, g * 0.7, b * 0.7)
                 
-                # Apply the main background color
+                # Update all backgrounds at once
                 self.styles.background = current_bg
                 header.styles.background = current_bg
                 messages_container.styles.background = current_bg
                 messages.styles.background = current_bg
                 input_container.styles.background = current_bg
-                
-                # Apply darker background to input area
                 message_input.styles.background = current_dark
                 
-                # Refresh all elements
+                # Single refresh call
                 self.refresh()
-                header.refresh()
-                messages_container.refresh()
-                messages.refresh()
-                input_container.refresh()
-                message_input.refresh()
-                
-                # More accurate timing
-                target_time = start_time + (i + 1) * frame_time
-                current_time = time.time()
-                sleep_time = max(0, target_time - current_time)
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
+                await asyncio.sleep(frame_time)
             
-            # Ensure final exact colors
-            dark_final = rgb_to_hex(*darken_color(*end_rgb))
+            # Final values
+            dark_final = rgb_to_hex(*(x * 0.7 for x in end_rgb))
             
             self.styles.background = bg_color
             header.styles.background = bg_color
@@ -944,12 +871,11 @@ class ChatScreen(Screen):
             input_container.styles.background = bg_color
             message_input.styles.background = dark_final
             
-            # Store the new color in the app for future use
             self.app.background_color = bg_color
             
         except Exception:
-            # Fallback to instant change if animation fails
-            dark_bg = rgb_to_hex(*darken_color(*end_rgb))
+            # Instant fallback
+            dark_bg = rgb_to_hex(*(x * 0.7 for x in hex_to_rgb(bg_color)))
             
             self.styles.background = bg_color
             header = self.query_one("#header")
