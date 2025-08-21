@@ -148,60 +148,55 @@ class SplashScreen(Screen):
         asyncio.create_task(self._animate_and_advance())
 
     async def _animate_and_advance(self):
-
         # Animate the splash logo: slide up from below and fade in with a strong ease-out.
         # After the animation completes we wait a short moment then move to the connection screen.
-        # Query the splash widget
-        try:
-            splash = self.query_one("#splash", Static)
-        except Exception:
-            # Fallback: if widget isn't present, just advance
-            self.show_connection()
-            return
-
+        
         # Strong ease-out function (exponential) for a noticeable fast-then-slow effect
         def ease_out_expo(t: float) -> float:
             if t >= 1.0:
                 return 1.0
-            # 1 - 2^(-10t) gives a very noticeable ease out
             return 1 - pow(2, -20 * t)
 
-        # Animation parameters
-        duration = 1.2   # seconds (long enough to notice)
-        frames = 40       # smoothness
-        start_offset_y =  22  # start a few rows lower (slides up to 0)
+        # 60fps animation parameters
+        duration = 1.2   # seconds
+        target_fps = 60
+        frame_time = 1.0 / target_fps
+        total_frames = int(duration * target_fps)
+        start_offset_y = 22  # start a few rows lower (slides up to 0)
         
-        # Try to use styles.offset and styles.opacity; if unavailable, skip animation gracefully.
-        use_styles = True
         try:
-            # initialize
+            splash = self.query_one("#splash", Static)
+            
+            # Initialize starting position
             splash.styles.opacity = 0.0
             splash.styles.offset = (0, start_offset_y)
-        except Exception:
-            use_styles = False
-
-        if use_styles:
-            for i in range(frames + 1):
-                t = i / frames
+            
+            # Force a refresh to apply initial styles
+            self.refresh()
+            await asyncio.sleep(0.016)  # Brief pause to ensure initial state is applied
+            
+            # 60fps animation loop
+            for i in range(total_frames + 1):
+                t = i / total_frames
                 eased = ease_out_expo(t)
+                
                 y = int(start_offset_y * (1 - eased))
                 opacity = float(eased)
-                try:
-                    splash.styles.offset = (0, y)
-                    splash.styles.opacity = opacity
-                except Exception:
-                    # If styles stop working mid-animation, break out and finalize.
-                    break
-                await asyncio.sleep(duration / frames)
+                
+                splash.styles.offset = (0, y)
+                splash.styles.opacity = opacity
+                
+                # Force refresh to make changes visible immediately
+                splash.refresh()
+                await asyncio.sleep(frame_time)
 
-            # Ensure final exact values
-            try:
-                splash.styles.offset = (0, 0)
-                splash.styles.opacity = 1.0
-            except Exception:
-                pass
-        else:
-            # Fallback: simple timed pause so the splash is visible, without animation.
+            # Ensure final exact values and refresh
+            splash.styles.offset = (0, 0)
+            splash.styles.opacity = 1.0
+            splash.refresh()
+            
+        except Exception:
+            # Fallback: simple timed pause so the splash is visible
             await asyncio.sleep(duration)
 
         # Short pause so the user sees the final state, then advance to connection screen.
@@ -408,40 +403,48 @@ class ConnectionScreen(Screen):
         await self.transition_to_chat(username, chat_name, password)
 
     async def transition_to_chat(self, username: str, chat_name: str, password: str):
-        """Animate the connection screen sliding up and fading out"""
+        """Animate the connection screen sliding up and fading out with 60fps"""
         self.transitioning = True
         
         # Ease-out function for smooth animation
         def ease_out_cubic(t: float) -> float:
             return 1 - pow(1 - t, 3)
         
-        # Animation parameters
-        duration = 0.8  # seconds
-        frames = 30
-        slide_distance = -15  # negative to slide up
+        # 60fps animation parameters
+        duration = 0.6  # Slightly faster for snappier feel
+        target_fps = 60
+        frame_time = 1.0 / target_fps
+        total_frames = int(duration * target_fps)
+        slide_distance = -20  # More dramatic slide up
         
         try:
-            # Animate slide up and fade out
-            for i in range(frames + 1):
-                t = i / frames
+            # Get initial position for smoother transition
+            initial_offset = self.styles.offset
+            initial_opacity = getattr(self.styles, 'opacity', 1.0)
+            
+            # 60fps animation loop - slide up and fade out
+            for i in range(total_frames + 1):
+                t = i / total_frames
                 eased = ease_out_cubic(t)
                 
                 # Calculate current position and opacity
                 current_y = int(slide_distance * eased)
-                current_opacity = 1.0 - eased
+                current_opacity = max(0.0, initial_opacity * (1.0 - eased))
                 
-                # Apply styles
+                # Apply styles and force refresh
                 self.styles.offset = (0, current_y)
                 self.styles.opacity = current_opacity
+                self.refresh()
                 
-                await asyncio.sleep(duration / frames)
+                await asyncio.sleep(frame_time)
             
-            # Ensure final state
+            # Ensure completely invisible final state
             self.styles.offset = (0, slide_distance)
             self.styles.opacity = 0.0
+            self.refresh()
             
-            # Brief pause in black
-            await asyncio.sleep(0.1)
+            # Very brief pause in complete black
+            await asyncio.sleep(0.05)
             
             # Start the chat with animated entrance
             self.app.start_chat_with_transition(username, chat_name, password)
@@ -449,6 +452,9 @@ class ConnectionScreen(Screen):
         except Exception as e:
             # Fallback: start chat normally if animation fails
             self.transitioning = False
+            self.styles.opacity = 1.0  # Reset opacity
+            self.styles.offset = (0, 0)  # Reset position
+            self.refresh()
             self.app.start_chat(username, chat_name, password)
 
     def action_quit(self):
@@ -548,40 +554,53 @@ class ChatScreen(Screen):
         input_widget.focus()
 
     async def animate_entrance_sequence(self):
-        """Animate the chat screen sliding down and fading in"""
+        """Animate the chat screen sliding down and fading in with 60fps"""
         # Ease-out function for smooth animation
         def ease_out_cubic(t: float) -> float:
             return 1 - pow(1 - t, 3)
         
-        # Animation parameters
-        duration = 0.8  # seconds
-        frames = 30
-        start_y = 15  # Start position (down)
+        # 60fps animation parameters
+        duration = 0.6  # Match the connection screen exit timing
+        target_fps = 60
+        frame_time = 1.0 / target_fps
+        total_frames = int(duration * target_fps)
+        start_y = 20  # More dramatic entrance from below
         
         try:
-            # Animate slide down and fade in
-            for i in range(frames + 1):
-                t = i / frames
+            # Initialize starting position (down and invisible)
+            self.styles.offset = (0, start_y)
+            self.styles.opacity = 0.0
+            self.refresh()
+            
+            # Brief pause to ensure starting state is visible
+            await asyncio.sleep(0.016)
+            
+            # 60fps animation loop - slide down into place and fade in
+            for i in range(total_frames + 1):
+                t = i / total_frames
                 eased = ease_out_cubic(t)
                 
                 # Calculate current position and opacity
                 current_y = int(start_y * (1 - eased))
                 current_opacity = eased
                 
-                # Apply styles
+                # Apply styles and force refresh
                 self.styles.offset = (0, current_y)
                 self.styles.opacity = current_opacity
+                self.refresh()
                 
-                await asyncio.sleep(duration / frames)
+                await asyncio.sleep(frame_time)
             
-            # Ensure final state
+            # Ensure final exact state
             self.styles.offset = (0, 0)
             self.styles.opacity = 1.0
+            self.refresh()
             
         except Exception:
-            # Fallback: ensure screen is visible
+            # Fallback: ensure screen is visible immediately
             self.styles.offset = (0, 0)
             self.styles.opacity = 1.0
+            self.refresh()
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
