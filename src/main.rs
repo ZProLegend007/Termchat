@@ -27,11 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user_colors = Arc::new(Mutex::new(UserColors::new()));
     let messages_model = ModelRc::new(VecModel::<ChatMessage>::default());
     
-    // Set initial state
     app.set_current_screen("splash".into());
     app.set_messages(messages_model.clone());
     
-    // Setup callbacks
     {
         let event_sender = event_sender.clone();
         app.on_splash_complete(move || {
@@ -57,21 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
     
-    {
-        let event_sender = event_sender.clone();
-        app.on_quit_requested(move || {
-            let _ = event_sender.send(AppEvent::Quit);
-        });
-    }
-    
-    {
-        let event_sender = event_sender.clone();
-        app.on_clear_messages(move || {
-            let _ = event_sender.send(AppEvent::ClearMessages);
-        });
-    }
-    
-    // Start server status check
     let status_sender = event_sender.clone();
     tokio::spawn(async move {
         loop {
@@ -81,7 +64,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     
-    // Start general count updater
     let count_sender = event_sender.clone();
     tokio::spawn(async move {
         loop {
@@ -91,17 +73,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     
-    let mut websocket_manager: Option<WebSocketManager> = None;
-    
-    // Main event loop
     let event_loop = async move {
         while let Some(event) = event_receiver.recv().await {
             if let Some(app) = app_weak.upgrade() {
                 match event {
                     AppEvent::SplashComplete => {
                         app.set_current_screen("connection".into());
-                        let mut state = app_state.lock().unwrap();
-                        state.set_screen(Screen::Connection);
                     }
                     
                     AppEvent::ServerStatusUpdate(available) => {
@@ -120,20 +97,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let final_chatname = if chatname.trim().is_empty() { "general" } else { chatname.trim() };
                         let final_password = if password.trim().is_empty() { "default" } else { password.trim() };
                         
-                        if final_username.to_lowercase() == "server" {
-                            // Show error for forbidden username
-                            continue;
-                        }
-                        
                         app.set_chat_name(final_chatname.into());
                         app.set_current_screen("chat".into());
                         app.set_connection_status("Connecting...".into());
                         
-                        // Clear messages
                         messages_model.as_any().downcast_ref::<VecModel<ChatMessage>>()
                             .unwrap().set_vec(vec![]);
                         
-                        // Start WebSocket connection
                         let ws_manager = WebSocketManager::new(
                             SERVER_URL.to_string(),
                             final_username.to_string(),
@@ -147,24 +117,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("WebSocket connection failed: {}", e);
                             }
                         });
-                        
-                        let mut state = app_state.lock().unwrap();
-                        state.set_screen(Screen::Chat);
-                        state.set_username(final_username.to_string());
-                        state.set_chatname(final_chatname.to_string());
                     }
                     
                     AppEvent::Connected => {
                         app.set_connection_status("Connected".into());
                     }
                     
-                    AppEvent::Disconnected => {
-                        app.set_connection_status("Disconnected".into());
-                    }
-                    
                     AppEvent::MessageReceived { username, content, is_server } => {
                         let color = if is_server {
-                            slint::Color::from_rgb_u8(135, 206, 235) // Primary color for server
+                            slint::Color::from_rgb_u8(135, 206, 235)
                         } else {
                             let mut colors = user_colors.lock().unwrap();
                             colors.get_color(&username)
@@ -182,43 +143,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     
                     AppEvent::SendMessage(content) => {
-                        // Handle special commands
-                        match content.trim().to_lowercase().as_str() {
-                            "/clear" | "/c" => {
-                                messages_model.as_any().downcast_ref::<VecModel<ChatMessage>>()
-                                    .unwrap().set_vec(vec![]);
-                                continue;
-                            }
-                            "/quit" | "/exit" | "/q" => {
-                                break;
-                            }
-                            _ => {}
-                        }
-                        
-                        if let Some(ref mut ws_manager) = websocket_manager {
-                            let message = ClientMessage::Message { content };
-                            if let Err(e) = ws_manager.send_message(message).await {
-                                eprintln!("Failed to send message: {}", e);
-                            }
+                        if content.trim().to_lowercase() == "/clear" || content.trim().to_lowercase() == "/c" {
+                            messages_model.as_any().downcast_ref::<VecModel<ChatMessage>>()
+                                .unwrap().set_vec(vec![]);
                         }
                     }
                     
-                    AppEvent::ClearMessages => {
-                        messages_model.as_any().downcast_ref::<VecModel<ChatMessage>>()
-                            .unwrap().set_vec(vec![]);
-                    }
-                    
-                    AppEvent::Quit => {
-                        break;
-                    }
-                    
-                    _ => {} // Handle other events as needed
+                    _ => {}
                 }
             }
         }
     };
     
-    // Run both the UI and event loop
     tokio::select! {
         _ = app.run() => {},
         _ = event_loop => {}
