@@ -148,9 +148,10 @@ class SplashScreen(Screen):
         asyncio.create_task(self._animate_and_advance())
 
     async def _animate_and_advance(self):
-        # Animate the splash logo with 60fps ease-out fade in
+        # Animate the splash logo: slide up from below and fade in with a strong ease-out.
+        # After the animation completes we wait a short moment then move to the connection screen.
         
-        # Ease-out function for smooth fade
+        # Strong ease-out function (exponential) for a noticeable fast-then-slow effect
         def ease_out_expo(t: float) -> float:
             if t >= 1.0:
                 return 1.0
@@ -161,35 +162,45 @@ class SplashScreen(Screen):
         target_fps = 60
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
+        start_offset_y = 22  # start a few rows lower (slides up to 0)
         
         try:
             splash = self.query_one("#splash", Static)
             
-            # Start with black (invisible)
-            splash.styles.color = "#000000"
+            # Initialize starting position and color fade
+            splash.styles.opacity = 0.0
+            splash.styles.offset = (0, start_offset_y)
+            splash.styles.color = "#000000"  # Start black for color fade
+            
             self.refresh()
             await asyncio.sleep(0.016)
             
-            # Target color
-            target_color = [135, 206, 235]  # #87CEEB in RGB
-            
-            # 60fps fade in animation
+            # 60fps animation loop - slide up AND color fade
             for i in range(total_frames + 1):
                 t = i / total_frames
                 eased = ease_out_expo(t)
                 
-                # Interpolate color from black to target
-                r = int(target_color[0] * eased)
-                g = int(target_color[1] * eased)
-                b = int(target_color[2] * eased)
+                # Slide animation
+                y = int(start_offset_y * (1 - eased))
+                opacity = float(eased)
                 
+                # Color fade animation (black to cyan)
+                r = int(135 * eased)  # #87CEEB = 135, 206, 235
+                g = int(206 * eased)
+                b = int(235 * eased)
                 color = f"#{r:02x}{g:02x}{b:02x}"
-                splash.styles.color = color
-                splash.refresh()
                 
+                # Apply all animations
+                splash.styles.offset = (0, y)
+                splash.styles.opacity = opacity
+                splash.styles.color = color
+                
+                splash.refresh()
                 await asyncio.sleep(frame_time)
 
-            # Ensure final color
+            # Ensure final exact values
+            splash.styles.offset = (0, 0)
+            splash.styles.opacity = 1.0
             splash.styles.color = "#87CEEB"
             splash.refresh()
             
@@ -399,106 +410,66 @@ class ConnectionScreen(Screen):
         await self.transition_to_chat(username, chat_name, password)
 
     async def transition_to_chat(self, username: str, chat_name: str, password: str):
-        """Fade to black transition using color changes"""
+        """Fade to black transition using the EXACT same method as colourshift"""
         self.transitioning = True
         
-        # Ease-out function
-        def ease_out_cubic(t: float) -> float:
-            return 1 - pow(1 - t, 3)
-        
         # 60fps animation parameters
-        duration = 0.5
+        duration = 0.4
         target_fps = 60
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
         try:
-            # Get all elements that need to fade
-            dialog = self.query_one("#dialog")
-            title = self.query_one("#title")
-            indicator_light = self.query_one("#indicator_light")
-            indicator_text = self.query_one("#indicator_text")
-            hint_row = self.query_one("#hint_row")
-            general_count_label = self.query_one("#general_count_label")
-            
-            # Get all form elements
-            form_labels = self.query(".label")
-            form_inputs = self.query(".input")
-            
-            # Store original colors
-            original_colors = {
-                'dialog_border': "#87CEEB",
-                'title': "#87CEEB", 
-                'indicator_text': getattr(indicator_text.styles, 'color', 'white'),
-                'indicator_light': getattr(indicator_light.styles, 'color', 'white'),
-                'hint': "white",
-                'general_count': "white",
-                'form_labels': "#cccccc",
-                'form_inputs': "white",
-                'background': "black"
-            }
-            
-            # Fade out animation - everything to black
+            # Fade to black using the same method as change_theme_color
             for i in range(total_frames + 1):
                 t = i / total_frames
-                eased = ease_out_cubic(t)
                 
-                # Calculate fade amount (1.0 = original color, 0.0 = black)
-                fade = 1.0 - eased
+                # Calculate darkness (1.0 = normal, 0.0 = black)
+                brightness = 1.0 - t
                 
-                # Fade dialog border
-                border_intensity = int(135 * fade), int(206 * fade), int(235 * fade)
-                dialog_border = f"#{border_intensity[0]:02x}{border_intensity[1]:02x}{border_intensity[2]:02x}"
-                dialog.styles.border = ("solid", dialog_border)
+                # Calculate current colors
+                theme_r = int(135 * brightness)  # #87CEEB
+                theme_g = int(206 * brightness)
+                theme_b = int(235 * brightness)
+                theme_color = f"#{theme_r:02x}{theme_g:02x}{theme_b:02x}"
                 
-                # Fade title
-                title_color = f"#{border_intensity[0]:02x}{border_intensity[1]:02x}{border_intensity[2]:02x}"
-                title.styles.color = title_color
+                white_intensity = int(255 * brightness)
+                text_color = f"#{white_intensity:02x}{white_intensity:02x}{white_intensity:02x}"
                 
-                # Fade text elements to black
-                text_intensity = int(255 * fade)
-                text_color = f"#{text_intensity:02x}{text_intensity:02x}{text_intensity:02x}"
+                gray_intensity = int(204 * brightness)  # #cccccc
+                gray_color = f"#{gray_intensity:02x}{gray_intensity:02x}{gray_intensity:02x}"
                 
-                indicator_text.styles.color = text_color
-                indicator_light.styles.color = text_color
-                hint_row.styles.color = text_color
-                general_count_label.styles.color = text_color
+                # Apply colors exactly like change_theme_color does
+                header = self.query_one("#title")
+                header.styles.color = theme_color
                 
-                # Fade form elements
-                label_intensity = int(204 * fade)  # #cccccc
-                label_color = f"#{label_intensity:02x}{label_intensity:02x}{label_intensity:02x}"
-                for label in form_labels:
-                    label.styles.color = label_color
+                # Update dialog border
+                dialog = self.query_one("#dialog")
+                dialog.styles.border = ("solid", theme_color)
                 
-                for input_widget in form_inputs:
-                    input_widget.styles.color = text_color
-                    input_widget.styles.border = ("solid", f"#{int(51*fade):02x}{int(51*fade):02x}{int(51*fade):02x}")
+                # Update all text elements
+                self.query_one("#indicator_text").styles.color = text_color
+                self.query_one("#indicator_light").styles.color = text_color
+                self.query_one("#hint_row").styles.color = text_color
+                self.query_one("#general_count_label").styles.color = text_color
                 
-                self.refresh()
+                # Update form labels
+                for label in self.query(".label"):
+                    label.styles.color = gray_color
+                
+                # Update input fields
+                for input_field in self.query(".input"):
+                    input_field.styles.color = text_color
+                
                 await asyncio.sleep(frame_time)
             
-            # Ensure everything is completely black
-            dialog.styles.border = ("solid", "#000000")
-            title.styles.color = "#000000"
-            indicator_text.styles.color = "#000000"
-            indicator_light.styles.color = "#000000"
-            hint_row.styles.color = "#000000"
-            general_count_label.styles.color = "#000000"
-            
-            for label in form_labels:
-                label.styles.color = "#000000"
-            for input_widget in form_inputs:
-                input_widget.styles.color = "#000000"
-                input_widget.styles.border = ("solid", "#000000")
-            
-            self.refresh()
-            await asyncio.sleep(0.05)  # Brief pause in black
+            # Brief pause in black
+            await asyncio.sleep(0.05)
             
             # Start chat with fade-in
             self.app.start_chat_with_transition(username, chat_name, password)
             
         except Exception as e:
-            # Fallback
             self.transitioning = False
             self.app.start_chat(username, chat_name, password)
 
@@ -599,85 +570,69 @@ class ChatScreen(Screen):
         input_widget.focus()
 
     async def animate_entrance_sequence(self):
-        """Fade in from black using color transitions"""
-        # Ease-out function
-        def ease_out_cubic(t: float) -> float:
-            return 1 - pow(1 - t, 3)
+        """Fade in from black using EXACT same method as change_theme_color"""
         
         # 60fps animation parameters
-        duration = 0.5
+        duration = 0.4
         target_fps = 60
         frame_time = 1.0 / target_fps
         total_frames = int(duration * target_fps)
         
         try:
-            # Get all elements that need to fade in
-            header = self.query_one("#header")
-            messages_container = self.query_one("#messages_container")
-            messages = self.query_one("#messages")
-            input_container = self.query_one("#input_container")
-            message_input = self.query_one("#message_input")
-            
-            # Start everything black
-            self.styles.background = "#000000"
-            header.styles.background = "#000000"
-            header.styles.color = "#000000"
-            messages_container.styles.background = "#000000"
-            messages_container.styles.border = ("solid", "#000000")
-            messages.styles.background = "#000000"
-            messages.styles.color = "#000000"
-            input_container.styles.background = "#000000"
-            input_container.styles.border = ("solid", "#000000")
-            message_input.styles.background = "#000000"
-            message_input.styles.color = "#000000"
-            
-            self.refresh()
-            await asyncio.sleep(0.016)
-            
-            # Fade in animation
+            # Start everything at black (like the transition left it)
+            # Then fade in using the same method as change_theme_color
             for i in range(total_frames + 1):
                 t = i / total_frames
-                eased = ease_out_cubic(t)
                 
-                # Calculate color intensities
-                theme_intensity = int(135 * eased), int(206 * eased), int(235 * eased)  # #87CEEB
-                theme_color = f"#{theme_intensity[0]:02x}{theme_intensity[1]:02x}{theme_intensity[2]:02x}"
+                # Calculate brightness (0.0 = black, 1.0 = normal)
+                brightness = t
                 
-                white_intensity = int(255 * eased)
+                # Calculate current colors
+                theme_r = int(135 * brightness)  # #87CEEB
+                theme_g = int(206 * brightness)
+                theme_b = int(235 * brightness)
+                theme_color = f"#{theme_r:02x}{theme_g:02x}{theme_b:02x}"
+                
+                white_intensity = int(255 * brightness)
                 white_color = f"#{white_intensity:02x}{white_intensity:02x}{white_intensity:02x}"
                 
-                # Apply fading colors
+                # Apply colors exactly like change_theme_color does
+                header = self.query_one("#header")
                 header.styles.color = theme_color
+                
+                # Update message container border
+                messages_container = self.query_one("#messages_container")
                 messages_container.styles.border = ("solid", theme_color)
-                messages.styles.color = white_color
+                
+                # Update input container border  
+                input_container = self.query_one("#input_container")
                 input_container.styles.border = ("solid", theme_color)
+                
+                # Update message text color
+                messages = self.query_one("#messages")
+                messages.styles.color = white_color
+                
+                # Update input text color
+                message_input = self.query_one("#message_input")
                 message_input.styles.color = white_color
                 
-                self.refresh()
                 await asyncio.sleep(frame_time)
             
-            # Ensure final colors
-            header.styles.background = "black"
+            # Ensure final colors are exactly right
+            header = self.query_one("#header")
             header.styles.color = "#87CEEB"
-            messages_container.styles.background = "black"
+            messages_container = self.query_one("#messages_container")
             messages_container.styles.border = ("solid", "#87CEEB")
-            messages.styles.background = "black"
-            messages.styles.color = "white"
-            input_container.styles.background = "black"
+            input_container = self.query_one("#input_container")
             input_container.styles.border = ("solid", "#87CEEB")
-            message_input.styles.background = "black"
+            messages = self.query_one("#messages")
+            messages.styles.color = "white"
+            message_input = self.query_one("#message_input")
             message_input.styles.color = "white"
-            self.styles.background = "black"
-            
-            self.refresh()
             
         except Exception:
             # Fallback: ensure proper colors
-            self.styles.background = "black"
-            header = self.query_one("#header")
-            header.styles.color = "#87CEEB"
-            header.styles.background = "black"
-            self.refresh()
+            pass
 
     async def on_input_submitted(self, event: Input.Submitted):
         # Handle user message input
