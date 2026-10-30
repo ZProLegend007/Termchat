@@ -1,4 +1,4 @@
-![Active Rooms Badge](https://img.shields.io/endpoint?url=https://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net/badge.json)
+![Active Rooms Badge](https://img.shields.io/endpoint?url=termchat-zwaacit-e2gtaycfe5edfpbx.australiaeast-01.azurewebsites.net/badge.json)
 
 # Termchat
 
