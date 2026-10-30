@@ -908,7 +908,7 @@ class TermchatApp(App):
         self.theme_color: str = "#87CEEB"  # Current theme color
         
         # Backend server URL (HTTPS WebSocket on port 443)
-        self.server_url = "wss://termchat-f9cgabe4ajd9djb9.australiaeast-01.azurewebsites.net"
+        self.server_url = "wss://termchat-zwaacit-e2gtaycfe5edfpbx.australiaeast-01.azurewebsites.net"
 
     def on_mount(self):
         # Start with the splash screen
