@@ -458,20 +458,26 @@ class ChatScreen(Screen):
         username: str,
         message: str
     ):
-        if self.notifier is not None:
-            try:
-                await self.notifier.send(
-                    title=f"Termchat - {username}",
-                    message=message,
-                    sound=DEFAULT_SOUND
-                )
-                return
-            except Exception:
-                pass
+        messages_log = self.query_one("#messages", RichLog)
+
+        if self.notifier is None:
+            messages_log.write(
+                "[bold orange1]Native notifications unavailable. "
+                "Install desktop-notifier.[/bold orange1]"
+            )
+            return
+
         try:
-            self.app.bell()
-        except Exception:
-            print("\a", end="", flush=True)
+            await self.notifier.send(
+                title=f"Termchat - {username}",
+                message=message,
+                sound=DEFAULT_SOUND
+            )
+        except Exception as error:
+            messages_log.write(
+                f"[bold orange1]Notification failed: "
+                f"{escape(str(error))}[/bold orange1]"
+            )
 
     async def handle_message(self, data):
         messages_log = self.query_one("#messages", RichLog)
