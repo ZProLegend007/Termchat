@@ -5,8 +5,13 @@
 
 import asyncio
 import json
+import os
+import platform
+import shlex
 import ssl
+import subprocess
 import sys
+import time
 from typing import Optional
 
 import aiohttp
@@ -22,6 +27,57 @@ from textual.screen import Screen
 from textual.widgets import Input, Label, RichLog, Static
 
 IOS_MODE = "-ios" in sys.argv
+def is_in_terminal():
+    return sys.stdin.isatty()
+
+
+def launch_new_terminal():
+    script_path = os.path.abspath(__file__)
+    ios_argument = " -ios" if IOS_MODE else ""
+
+    if platform.system() == "Windows":
+        python = shlex.quote(sys.executable)
+        cmd = f'start cmd /k {python} "{script_path}"{ios_argument}'
+        os.system(cmd)
+        sys.exit(0)
+
+    if platform.system() == "Darwin":
+        python = shlex.quote(sys.executable)
+        applescript = f'''
+        tell application "Terminal"
+            activate
+            if (count of windows) = 0 then
+                do script "{python} {script_path}{ios_argument}"
+                delay 0.12
+                try
+                    set bounds of front window to {{100, 100, 1012, 620}}
+                end try
+            else
+                do script "{python} {script_path}{ios_argument}" in front window
+            end if
+        end tell
+        '''
+        os.system(f'osascript -e {shlex.quote(applescript)}')
+        sys.exit(0)
+
+    if platform.system() == "Linux":
+        python = shlex.quote(sys.executable)
+        terminals = [
+            ["gnome-terminal", "--", python, script_path, *(["-ios"] if IOS_MODE else [])],
+            ["konsole", "-e", python, script_path, *(["-ios"] if IOS_MODE else [])],
+            ["xterm", "-e", python, script_path, *(["-ios"] if IOS_MODE else [])],
+        ]
+        for command in terminals:
+            try:
+                subprocess.Popen(command)
+                sys.exit(0)
+            except FileNotFoundError:
+                continue
+        print("No supported terminal emulator found. Please run this script from a terminal.")
+        sys.exit(1)
+
+    print("Unsupported OS.")
+    sys.exit(1)
 
 
 async def get_general_count(server_url: str) -> int:
@@ -94,15 +150,13 @@ class ConnectionScreen(Screen):
     #indicator_row { layout: horizontal; width: 100%; align: center middle; margin-bottom: 1; }
     #indicator_light { width: 2; content-align: center middle; }
     #indicator_text { margin-left: 1; color: white; }
-    #hint_row { width: 100%; height: 3; align: center middle; content-align: center middle; margin-top: 2; }
-    #hint_text { width: 100%; content-align: center middle; text-align: center; }
+    #hint_row { width: 100%; content-align: center middle; margin-top: 2; }
     #form { layout: vertical; height: auto; margin: 2; padding: 1; }
     .form-row { height: 3; layout: horizontal; margin-bottom: 1; }
     .label { width: 15; content-align: right middle; margin-right: 2; color: #cccccc; text-style: bold; }
     .input { width: 35; height: 3; color: white; border: solid #333333; }
     .input:focus { border: solid #87CEEB; }
     #status_label { width: 40; content-align: center middle; color: yellow; text-style: bold; }
-    #general_count_label { width: 100%; content-align: left middle; text-align: left; padding-left: 1; }
     """
 
     BINDINGS = [
@@ -123,14 +177,7 @@ class ConnectionScreen(Screen):
             with Container(id="indicator_row"):
                 yield Static("●", id="indicator_light")
                 yield Label("Checking server...", id="indicator_text")
-            with Container(id="hint_row"):
-                yield Label(
-                    "Keep the [#cccccc]chat name[/#cccccc] and "
-                    "[#cccccc]password[/#cccccc] blank to join the "
-                    "[#90ee90]general chat[/#90ee90]",
-                    markup=True,
-                    id="hint_text"
-                )
+            yield Container(Label("Keep chat name and password blank to join the [#90ee90]general chat[/#90ee90]", markup=True), id="hint_row")
             with Container(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
@@ -243,7 +290,15 @@ class ConnectionScreen(Screen):
 class ChatScreen(Screen):
     CSS = """
     ChatScreen { layout: vertical; background: black; color: white; }
-    #header { dock: top; height: 3; background: black; color: #87CEEB; content-align: left middle; text-align: left; text-style: bold; padding: 1 1; }
+    #header {
+        dock: top;
+        height: 3;
+        background: black;
+        color: #87CEEB;
+        content-align: center middle;
+        text-style: bold;
+        padding: 1 0;
+    }
     #messages_container { height: 1fr; border: solid #87CEEB; margin: 0; }
     #messages { height: 1fr; scrollbar-gutter: stable; border: none; background: black; color: white; padding: 1; }
     #input_container { dock: bottom; height: 5; border: solid #87CEEB; margin: 0 0 1 0; padding: 1; content-align: center middle; }
@@ -269,6 +324,7 @@ class ChatScreen(Screen):
             f"TERMCHAT - Connecting to '{self.chat_name}'...",
             id="header"
         )
+
         with Container(id="messages_container"):
             yield RichLog(id="messages", highlight=True, markup=True)
         with Container(id="input_container"):
@@ -347,7 +403,7 @@ class ChatScreen(Screen):
                 "chatname": self.chat_name, "password": self.password
             }))
             while True:
-                response = await asyncio.wait_for(websocket.recv(), timeout=10)
+                response = await asyncio.wait_for(websocket.recv(), timeout=5)
                 data = json.loads(response)
 
                 if data.get("type") in ("error", "auth_failed"):
@@ -562,6 +618,8 @@ if __name__ == "__main__":
     try:
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        if not is_in_terminal():
+            launch_new_terminal()
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nExiting...")
