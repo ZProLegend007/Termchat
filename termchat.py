@@ -5,13 +5,8 @@
 
 import asyncio
 import json
-import os
-import platform
-import shlex
 import ssl
-import subprocess
 import sys
-import time
 from typing import Optional
 
 import aiohttp
