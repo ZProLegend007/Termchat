@@ -17,6 +17,13 @@ from typing import Optional
 import aiohttp
 import certifi
 import websockets
+
+try:
+    from desktop_notifier import DesktopNotifier, DEFAULT_SOUND
+except ImportError:
+    DesktopNotifier = None
+    DEFAULT_SOUND = None
+
 from rich.markup import escape
 from textual import events
 from textual.app import App, ComposeResult
@@ -151,7 +158,8 @@ class ConnectionScreen(Screen):
     #indicator_row { layout: horizontal; width: 100%; align: center middle; margin-bottom: 1; }
     #indicator_light { width: 2; content-align: center middle; }
     #indicator_text { margin-left: 1; color: white; }
-    #hint_row { width: 100%; content-align: center middle; margin-top: 2; }
+    #hint_row { width: 100%; height: 3; content-align: center middle; align: center middle; margin-top: 2; }
+    #hint_text { width: 100%; content-align: center middle; text-align: center; }
     #form { layout: vertical; height: auto; margin: 2; padding: 1; }
     .form-row { height: 3; layout: horizontal; margin-bottom: 1; }
     .label { width: 15; content-align: right middle; margin-right: 2; color: #cccccc; text-style: bold; }
@@ -178,7 +186,14 @@ class ConnectionScreen(Screen):
             with Container(id="indicator_row"):
                 yield Static("●", id="indicator_light")
                 yield Label("Checking server...", id="indicator_text")
-            yield Container(Label("Keep chat name and password blank to join the [#90ee90]general chat[/#90ee90]", markup=True), id="hint_row")
+            with Container(id="hint_row"):
+                yield Label(
+                    "Keep the [#cccccc]chat name[/#cccccc] and "
+                    "[#cccccc]password[/#cccccc] blank to join the "
+                    "[#90ee90]general chat[/#90ee90]",
+                    markup=True,
+                    id="hint_text"
+                )
             with Container(id="form"):
                 with Container(classes="form-row"):
                     yield Label("Username:", classes="label")
@@ -205,9 +220,7 @@ class ConnectionScreen(Screen):
                 widget.styles.width = 12
                 widget.styles.margin_right = 1
         self.query_one("#username_input").focus()
-        self.server_check_task = asyncio.create_task(
-            self.server_status_loop()
-        )
+        self.server_check_task = asyncio.create_task(self.server_status_loop())
 
     async def server_status_loop(self):
         while self.is_mounted:
@@ -244,11 +257,7 @@ class ConnectionScreen(Screen):
         color = "#00ff00" if self.server_available else "#ff0000"
         light.styles.color = color
         text.styles.color = color
-        text.update(
-            "Server available"
-            if self.server_available
-            else "Server unavailable"
-        )
+        text.update("Server available" if self.server_available else "Server unavailable")
 
     def on_unmount(self):
         task = getattr(self, "server_check_task", None)
@@ -313,6 +322,11 @@ class ChatScreen(Screen):
         self.reconnect_in_progress = False
         self.returning_to_login = False
         self.listener_task = None
+        self.notifier = (
+            DesktopNotifier(app_name="Termchat")
+            if DesktopNotifier is not None
+            else None
+        )
 
     def compose(self) -> ComposeResult:
         yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
@@ -439,7 +453,21 @@ class ChatScreen(Screen):
                 messages_log.write(f"[bold orange1]Connection closed: {escape(str(error))}[/bold orange1]")
                 self.query_one("#header").update("TERMCHAT - Disconnected")
 
-    def play_message_sound(self):
+    async def send_message_notification(
+        self,
+        username: str,
+        message: str
+    ):
+        if self.notifier is not None:
+            try:
+                await self.notifier.send(
+                    title=f"Termchat - {username}",
+                    message=message,
+                    sound=DEFAULT_SOUND
+                )
+                return
+            except Exception:
+                pass
         try:
             self.app.bell()
         except Exception:
@@ -453,8 +481,15 @@ class ChatScreen(Screen):
             username = data.get("username", "Unknown")
             message = data.get("content", "")
             now = time.monotonic()
-            if username not in ("Server", self.username) and now - self.last_chat_activity >= 30 and not self.notification_muted:
-                self.play_message_sound()
+            if (
+                username not in ("Server", self.username)
+                and now - self.last_chat_activity >= 30
+                and not self.notification_muted
+            ):
+                await self.send_message_notification(
+                    username,
+                    message
+                )
             self.last_chat_activity = now
             if username == "Server":
                 messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
