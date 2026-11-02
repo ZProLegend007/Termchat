@@ -23,16 +23,29 @@ try:
 except ImportError:
     DesktopNotifier = None
     DEFAULT_SOUND = None
-
 from rich.markup import escape
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
 from textual.screen import Screen
-from textual.widgets import Input, Label, RichLog, Static
+from textual.widgets import Button, Input, Label, RichLog, Static
 
 IOS_MODE = "-ios" in sys.argv
+TERMCHAT_APP_ID = "WAIT.Termchat"
+
+
+def configure_windows_app_identity():
+    if sys.platform != "win32":
+        return
+
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            TERMCHAT_APP_ID
+        )
+    except Exception:
+        pass
 
 
 def is_in_terminal():
@@ -166,7 +179,7 @@ class ConnectionScreen(Screen):
     .input { width: 35; height: 3; color: white; border: solid #333333; }
     .input:focus { border: solid #87CEEB; }
     #status_label { width: 40; content-align: center middle; color: yellow; text-style: bold; }
-    #general_count_label { width: 100%; content-align: center middle; }
+    #general_count_label { width: 100%; content-align: left middle; text-align: left; padding-left: 1; }
     """
 
     BINDINGS = [
@@ -220,22 +233,12 @@ class ConnectionScreen(Screen):
                 widget.styles.width = 12
                 widget.styles.margin_right = 1
         self.query_one("#username_input").focus()
-        self.server_check_task = asyncio.create_task(self.server_status_loop())
-
-    async def server_status_loop(self):
-        while self.is_mounted:
-            await asyncio.gather(
-                self.check_server_status(),
-                self.update_general_count()
-            )
-            await asyncio.sleep(5)
+        self.set_timer(0.1, self.check_server_status)
+        asyncio.create_task(self.update_general_count())
 
     async def update_general_count(self):
         count = await get_general_count(self.app.server_url)
-        if self.is_mounted:
-            self.query_one("#general_count_label").update(
-                f"[#90ee90]{count}[/#90ee90] user/s in general chat"
-            )
+        self.query_one("#general_count_label").update(f"[#90ee90]{count}[/#90ee90] user/s in general chat")
 
     async def check_server_status(self):
         try:
@@ -249,20 +252,12 @@ class ConnectionScreen(Screen):
             self.server_available = True
         except Exception:
             self.server_available = False
-        if not self.is_mounted:
-            return
-
         light = self.query_one("#indicator_light")
         text = self.query_one("#indicator_text")
         color = "#00ff00" if self.server_available else "#ff0000"
         light.styles.color = color
         text.styles.color = color
         text.update("Server available" if self.server_available else "Server unavailable")
-
-    def on_unmount(self):
-        task = getattr(self, "server_check_task", None)
-        if task and not task.done():
-            task.cancel()
 
     async def on_input_submitted(self, event: Input.Submitted):
         if event.input.id == "username_input":
@@ -300,7 +295,10 @@ class ConnectionScreen(Screen):
 class ChatScreen(Screen):
     CSS = """
     ChatScreen { layout: vertical; background: black; color: white; }
-    #header { dock: top; height: 3; background: black; color: #87CEEB; content-align: center middle; text-style: bold; padding: 1 0; }
+    #header_row { dock: top; height: 3; layout: horizontal; background: black; }
+    #header { width: 1fr; height: 3; background: black; color: #87CEEB; content-align: center middle; text-style: bold; padding: 1 0; }
+    #notification_button { width: 7; height: 3; min-width: 7; border: none; background: black; color: #00ff00; padding: 0 1; }
+    #notification_button:hover { background: #202020; }
     #messages_container { height: 1fr; border: solid #87CEEB; margin: 0; }
     #messages { height: 1fr; scrollbar-gutter: stable; border: none; background: black; color: white; padding: 1; }
     #input_container { dock: bottom; height: 5; border: solid #87CEEB; margin: 0 0 1 0; padding: 1; content-align: center middle; }
@@ -329,16 +327,39 @@ class ChatScreen(Screen):
         )
 
     def compose(self) -> ComposeResult:
-        yield Label(f"TERMCHAT - Connecting to '{self.chat_name}'...", id="header")
+        with Container(id="header_row"):
+            yield Label(
+                f"TERMCHAT - Connecting to '{self.chat_name}'...",
+                id="header"
+            )
+            yield Button("🔔", id="notification_button")
         with Container(id="messages_container"):
             yield RichLog(id="messages", highlight=True, markup=True)
         with Container(id="input_container"):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
+        self.update_notification_button()
         success = await self.connect_to_server()
         if success:
             self.query_one("#message_input").focus()
+
+    def update_notification_button(self):
+        button = self.query_one("#notification_button", Button)
+        if self.notification_muted:
+            button.label = "🔕"
+            button.styles.color = "#ff9900"
+        else:
+            button.label = "🔔"
+            button.styles.color = "#00ff00"
+
+    def set_notification_muted(self, muted: bool):
+        self.notification_muted = muted
+        self.update_notification_button()
+
+    def on_button_pressed(self, event: Button.Pressed):
+        if event.button.id == "notification_button":
+            self.set_notification_muted(not self.notification_muted)
 
     async def on_input_submitted(self, event: Input.Submitted):
         if event.input.id != "message_input":
@@ -353,11 +374,9 @@ class ChatScreen(Screen):
         elif lower in ("/quit", "/exit", "/q"):
             await self.return_to_login()
         elif lower == "/mute":
-            self.notification_muted = True
-            self.query_one("#messages", RichLog).write("[bold orange1]Message sounds muted[/bold orange1]")
+            self.set_notification_muted(True)
         elif lower == "/unmute":
-            self.notification_muted = False
-            self.query_one("#messages", RichLog).write("[bold #00ff00]Message sounds enabled[/bold #00ff00]")
+            self.set_notification_muted(False)
         else:
             await self.send_message(user_message)
 
@@ -458,13 +477,7 @@ class ChatScreen(Screen):
         username: str,
         message: str
     ):
-        messages_log = self.query_one("#messages", RichLog)
-
         if self.notifier is None:
-            messages_log.write(
-                "[bold orange1]Native notifications unavailable. "
-                "Install desktop-notifier.[/bold orange1]"
-            )
             return
 
         try:
@@ -473,11 +486,8 @@ class ChatScreen(Screen):
                 message=message,
                 sound=DEFAULT_SOUND
             )
-        except Exception as error:
-            messages_log.write(
-                f"[bold orange1]Notification failed: "
-                f"{escape(str(error))}[/bold orange1]"
-            )
+        except Exception:
+            pass
 
     async def handle_message(self, data):
         messages_log = self.query_one("#messages", RichLog)
@@ -487,15 +497,8 @@ class ChatScreen(Screen):
             username = data.get("username", "Unknown")
             message = data.get("content", "")
             now = time.monotonic()
-            if (
-                username not in ("Server", self.username)
-                and now - self.last_chat_activity >= 30
-                and not self.notification_muted
-            ):
-                await self.send_message_notification(
-                    username,
-                    message
-                )
+            if username not in ("Server", self.username) and now - self.last_chat_activity >= 30 and not self.notification_muted:
+                await self.send_message_notification(username, message)
             self.last_chat_activity = now
             if username == "Server":
                 messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
@@ -647,6 +650,7 @@ class TermchatApp(App):
 
 
 async def main():
+    configure_windows_app_identity()
     await TermchatApp().run_async()
 
 
