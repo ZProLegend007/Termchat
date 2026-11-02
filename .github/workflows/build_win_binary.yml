@@ -54,9 +54,9 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ steps.find_icon.outputs.icon_path }}" ]; then
-            pyinstaller --onefile $HIDDEN_IMPORTS desktop_notifier --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
+            pyinstaller --onefile $HIDDEN_IMPORTS --name Termchat --icon "${{ steps.find_icon.outputs.icon_path }}" termchat.py
           else
-            pyinstaller --onefile $HIDDEN_IMPORTS desktop_notifier --name Termchat termchat.py
+            pyinstaller --onefile $HIDDEN_IMPORTS --name Termchat termchat.py
           fi
 
       - name: Upload .exe as workflow artifact
