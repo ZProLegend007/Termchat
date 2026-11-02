@@ -18,197 +18,15 @@ import aiohttp
 import certifi
 import websockets
 
-try:
-    from desktop_notifier import DesktopNotifier, DEFAULT_SOUND
-except ImportError:
-    DesktopNotifier = None
-    DEFAULT_SOUND = None
 from rich.markup import escape
 from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
 from textual.screen import Screen
-from textual.widgets import Button, Input, Label, RichLog, Static
+from textual.widgets import Input, Label, RichLog, Static
 
 IOS_MODE = "-ios" in sys.argv
-TERMCHAT_APP_ID = "exe.termchat"
-
-
-def get_termchat_executable_path():
-    if getattr(sys, "frozen", False):
-        return os.path.abspath(sys.executable)
-    return os.path.abspath(__file__)
-
-
-def register_windows_start_menu_shortcut():
-    if sys.platform != "win32" or not getattr(sys, "frozen", False):
-        return
-
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        shell32 = ctypes.windll.shell32
-        ole32 = ctypes.windll.ole32
-        propsys = ctypes.windll.propsys
-
-        start_menu = os.path.join(
-            os.environ.get("APPDATA", ""),
-            "Microsoft",
-            "Windows",
-            "Start Menu",
-            "Programs"
-        )
-        if not start_menu:
-            return
-
-        os.makedirs(start_menu, exist_ok=True)
-        shortcut_path = os.path.join(start_menu, "Termchat.lnk")
-        executable_path = get_termchat_executable_path()
-
-        CLSID_ShellLink = ctypes.c_byte * 16
-        IID_IShellLinkW = ctypes.c_byte * 16
-        IID_IPropertyStore = ctypes.c_byte * 16
-
-        clsid_shell_link = CLSID_ShellLink(
-            0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
-        )
-        iid_shell_link = IID_IShellLinkW(
-            0x21, 0x4F, 0x9E, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
-        )
-        iid_property_store = IID_IPropertyStore(
-            0x04, 0xCA, 0xF6, 0x88, 0x20, 0x23, 0x00, 0x00,
-            0xA6, 0x5E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
-        )
-
-        class PROPERTYKEY(ctypes.Structure):
-            _fields_ = [("fmtid", ctypes.c_byte * 16), ("pid", wintypes.DWORD)]
-
-        class PROPVARIANT(ctypes.Structure):
-            class _VALUE(ctypes.Union):
-                _fields_ = [("pwszVal", wintypes.LPWSTR)]
-
-            _anonymous_ = ("value",)
-            _fields_ = [
-                ("vt", wintypes.USHORT),
-                ("wReserved1", wintypes.USHORT),
-                ("wReserved2", wintypes.USHORT),
-                ("wReserved3", wintypes.USHORT),
-                ("value", _VALUE)
-            ]
-
-        ole32.CoInitialize(None)
-        shell_link = ctypes.c_void_p()
-        result = ole32.CoCreateInstance(
-            ctypes.byref(clsid_shell_link),
-            None,
-            1,
-            ctypes.byref(iid_shell_link),
-            ctypes.byref(shell_link)
-        )
-        if result != 0:
-            return
-
-        vtable = ctypes.cast(
-            shell_link,
-            ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
-        ).contents
-
-        set_path = ctypes.WINFUNCTYPE(
-            ctypes.c_long,
-            ctypes.c_void_p,
-            wintypes.LPCWSTR
-        )(vtable[20])
-        set_description = ctypes.WINFUNCTYPE(
-            ctypes.c_long,
-            ctypes.c_void_p,
-            wintypes.LPCWSTR
-        )(vtable[7])
-        query_interface = ctypes.WINFUNCTYPE(
-            ctypes.c_long,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.POINTER(ctypes.c_void_p)
-        )(vtable[0])
-
-        set_path(shell_link, executable_path)
-        set_description(shell_link, "Termchat")
-
-        property_store = ctypes.c_void_p()
-        if query_interface(
-            shell_link,
-            ctypes.byref(iid_property_store),
-            ctypes.byref(property_store)
-        ) == 0:
-            property_vtable = ctypes.cast(
-                property_store,
-                ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
-            ).contents
-            set_value = ctypes.WINFUNCTYPE(
-                ctypes.c_long,
-                ctypes.c_void_p,
-                ctypes.POINTER(PROPERTYKEY),
-                ctypes.POINTER(PROPVARIANT)
-            )(property_vtable[6])
-            commit = ctypes.WINFUNCTYPE(
-                ctypes.c_long,
-                ctypes.c_void_p
-            )(property_vtable[7])
-
-            app_id_fmtid = (ctypes.c_byte * 16)(
-                0xD5, 0xA8, 0x29, 0x9F, 0x0C, 0x4B, 0x00, 0x00,
-                0x86, 0xAB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-            )
-            key = PROPERTYKEY(app_id_fmtid, 5)
-            value = PROPVARIANT()
-            value.vt = 31
-            value.pwszVal = TERMCHAT_APP_ID
-            set_value(property_store, ctypes.byref(key), ctypes.byref(value))
-            commit(property_store)
-
-        persist_file = ctypes.c_void_p()
-        iid_persist_file = (ctypes.c_byte * 16)(
-            0x0B, 0x01, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
-        )
-        if query_interface(
-            shell_link,
-            ctypes.byref(iid_persist_file),
-            ctypes.byref(persist_file)
-        ) == 0:
-            persist_vtable = ctypes.cast(
-                persist_file,
-                ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
-            ).contents
-            save = ctypes.WINFUNCTYPE(
-                ctypes.c_long,
-                ctypes.c_void_p,
-                wintypes.LPCWSTR,
-                wintypes.BOOL
-            )(persist_vtable[6])
-            save(persist_file, shortcut_path, True)
-
-    except Exception:
-        pass
-
-
-def configure_windows_app_identity():
-    if sys.platform != "win32":
-        return
-
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            TERMCHAT_APP_ID
-        )
-        register_windows_start_menu_shortcut()
-    except Exception:
-        pass
-
-
 def is_in_terminal():
     return sys.stdin.isatty()
 
@@ -473,10 +291,7 @@ class ConnectionScreen(Screen):
 class ChatScreen(Screen):
     CSS = """
     ChatScreen { layout: vertical; background: black; color: white; }
-    #header_row { dock: top; height: 3; layout: horizontal; background: black; }
-    #header { width: 1fr; height: 3; background: black; color: #87CEEB; content-align: left middle; text-align: left; text-style: bold; padding: 1 1; }
-    #notification_button { width: 7; height: 3; min-width: 7; border: none; background: black; color: white; padding: 0 1; }
-    #notification_button:hover { background: #202020; color: white; }
+    #header { dock: top; height: 3; background: black; color: #87CEEB; content-align: left middle; text-align: left; text-style: bold; padding: 1 1; }
     #messages_container { height: 1fr; border: solid #87CEEB; margin: 0; }
     #messages { height: 1fr; scrollbar-gutter: stable; border: none; background: black; color: white; padding: 1; }
     #input_container { dock: bottom; height: 5; border: solid #87CEEB; margin: 0 0 1 0; padding: 1; content-align: center middle; }
@@ -493,48 +308,24 @@ class ChatScreen(Screen):
         self.password = password
         self.ios_colour_next_allowed = 0.0
         self.ios_colour_warning_shown = False
-        self.notification_muted = False
-        self.last_chat_activity = time.monotonic()
         self.reconnect_in_progress = False
         self.returning_to_login = False
         self.listener_task = None
-        self.app_has_focus = True
-        self.notifier = (
-            DesktopNotifier(app_name="Termchat")
-            if DesktopNotifier is not None
-            else None
-        )
 
     def compose(self) -> ComposeResult:
-        with Container(id="header_row"):
-            yield Label(
-                f"TERMCHAT - Connecting to '{self.chat_name}'...",
-                id="header"
-            )
-            yield Button("🔔", id="notification_button")
+        yield Label(
+            f"TERMCHAT - Connecting to '{self.chat_name}'...",
+            id="header"
+        )
         with Container(id="messages_container"):
             yield RichLog(id="messages", highlight=True, markup=True)
         with Container(id="input_container"):
             yield Input(placeholder="Type your message here...", id="message_input")
 
     async def on_mount(self):
-        self.update_notification_button()
         success = await self.connect_to_server()
         if success:
             self.query_one("#message_input").focus()
-
-    def update_notification_button(self):
-        button = self.query_one("#notification_button", Button)
-        button.label = "🔕" if self.notification_muted else "🔔"
-        button.styles.color = "white"
-
-    def set_notification_muted(self, muted: bool):
-        self.notification_muted = muted
-        self.update_notification_button()
-
-    def on_button_pressed(self, event: Button.Pressed):
-        if event.button.id == "notification_button":
-            self.set_notification_muted(not self.notification_muted)
 
     async def on_input_submitted(self, event: Input.Submitted):
         if event.input.id != "message_input":
@@ -548,10 +339,6 @@ class ChatScreen(Screen):
             self.query_one("#messages", RichLog).clear()
         elif lower in ("/quit", "/exit", "/q"):
             await self.return_to_login()
-        elif lower == "/mute":
-            self.set_notification_muted(True)
-        elif lower == "/unmute":
-            self.set_notification_muted(False)
         else:
             await self.send_message(user_message)
 
@@ -579,13 +366,8 @@ class ChatScreen(Screen):
             self.app.pop_screen()
 
     async def on_app_focus(self, event: events.AppFocus):
-        self.app_has_focus = True
-        self.last_chat_activity = time.monotonic()
         if not self.app.connected and not self.returning_to_login and not self.reconnect_in_progress:
             await self.reconnect_to_server()
-
-    def on_app_blur(self, event: events.AppBlur):
-        self.app_has_focus = False
 
     async def reconnect_to_server(self):
         self.reconnect_in_progress = True
@@ -665,18 +447,6 @@ class ChatScreen(Screen):
                 messages_log.write(f"[bold orange1]Connection closed: {escape(str(error))}[/bold orange1]")
                 self.query_one("#header").update("TERMCHAT - Disconnected")
 
-    async def send_message_notification(self, username: str, message: str):
-        if self.notifier is None:
-            return
-        try:
-            await self.notifier.send(
-                title=f"Termchat - {username}",
-                message=message,
-                sound=DEFAULT_SOUND
-            )
-        except Exception:
-            pass
-
     async def handle_message(self, data):
         messages_log = self.query_one("#messages", RichLog)
         message_type = data.get("type", "")
@@ -684,16 +454,6 @@ class ChatScreen(Screen):
         if message_type == "message":
             username = data.get("username", "Unknown")
             message = data.get("content", "")
-            now = time.monotonic()
-            if (
-                username not in ("Server", self.username)
-                and not self.notification_muted
-                and (
-                    not self.app_has_focus
-                    or now - self.last_chat_activity >= 30
-                )
-            ):
-                await self.send_message_notification(username, message)
             if username == "Server":
                 messages_log.write(f"[bold #87CEEB]Server:[/bold #87CEEB] {escape(message)}")
             else:
@@ -744,7 +504,6 @@ class ChatScreen(Screen):
         messages_log = self.query_one("#messages", RichLog)
         if self.app.websocket and self.app.connected:
             try:
-                self.last_chat_activity = time.monotonic()
                 await self.app.websocket.send(json.dumps({"type": "message", "content": user_message}))
             except Exception as error:
                 self.app.connected = False
@@ -844,7 +603,6 @@ class TermchatApp(App):
 
 
 async def main():
-    configure_windows_app_identity()
     await TermchatApp().run_async()
 
 
