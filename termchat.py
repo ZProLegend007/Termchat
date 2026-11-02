@@ -32,18 +32,181 @@ from textual.screen import Screen
 from textual.widgets import Button, Input, Label, RichLog, Static
 
 IOS_MODE = "-ios" in sys.argv
-TERMCHAT_APP_ID = "WAIT.Termchat"
+TERMCHAT_APP_ID = "exe.termchat"
+
+
+def get_termchat_executable_path():
+    if getattr(sys, "frozen", False):
+        return os.path.abspath(sys.executable)
+    return os.path.abspath(__file__)
+
+
+def register_windows_start_menu_shortcut():
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+        propsys = ctypes.windll.propsys
+
+        start_menu = os.path.join(
+            os.environ.get("APPDATA", ""),
+            "Microsoft",
+            "Windows",
+            "Start Menu",
+            "Programs"
+        )
+        if not start_menu:
+            return
+
+        os.makedirs(start_menu, exist_ok=True)
+        shortcut_path = os.path.join(start_menu, "Termchat.lnk")
+        executable_path = get_termchat_executable_path()
+
+        CLSID_ShellLink = ctypes.c_byte * 16
+        IID_IShellLinkW = ctypes.c_byte * 16
+        IID_IPropertyStore = ctypes.c_byte * 16
+
+        clsid_shell_link = CLSID_ShellLink(
+            0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
+        )
+        iid_shell_link = IID_IShellLinkW(
+            0x21, 0x4F, 0x9E, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
+        )
+        iid_property_store = IID_IPropertyStore(
+            0x04, 0xCA, 0xF6, 0x88, 0x20, 0x23, 0x00, 0x00,
+            0xA6, 0x5E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
+        )
+
+        class PROPERTYKEY(ctypes.Structure):
+            _fields_ = [("fmtid", ctypes.c_byte * 16), ("pid", wintypes.DWORD)]
+
+        class PROPVARIANT(ctypes.Structure):
+            class _VALUE(ctypes.Union):
+                _fields_ = [("pwszVal", wintypes.LPWSTR)]
+
+            _anonymous_ = ("value",)
+            _fields_ = [
+                ("vt", wintypes.USHORT),
+                ("wReserved1", wintypes.USHORT),
+                ("wReserved2", wintypes.USHORT),
+                ("wReserved3", wintypes.USHORT),
+                ("value", _VALUE)
+            ]
+
+        ole32.CoInitialize(None)
+        shell_link = ctypes.c_void_p()
+        result = ole32.CoCreateInstance(
+            ctypes.byref(clsid_shell_link),
+            None,
+            1,
+            ctypes.byref(iid_shell_link),
+            ctypes.byref(shell_link)
+        )
+        if result != 0:
+            return
+
+        vtable = ctypes.cast(
+            shell_link,
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
+        ).contents
+
+        set_path = ctypes.WINFUNCTYPE(
+            ctypes.c_long,
+            ctypes.c_void_p,
+            wintypes.LPCWSTR
+        )(vtable[20])
+        set_description = ctypes.WINFUNCTYPE(
+            ctypes.c_long,
+            ctypes.c_void_p,
+            wintypes.LPCWSTR
+        )(vtable[7])
+        query_interface = ctypes.WINFUNCTYPE(
+            ctypes.c_long,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p)
+        )(vtable[0])
+
+        set_path(shell_link, executable_path)
+        set_description(shell_link, "Termchat")
+
+        property_store = ctypes.c_void_p()
+        if query_interface(
+            shell_link,
+            ctypes.byref(iid_property_store),
+            ctypes.byref(property_store)
+        ) == 0:
+            property_vtable = ctypes.cast(
+                property_store,
+                ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
+            ).contents
+            set_value = ctypes.WINFUNCTYPE(
+                ctypes.c_long,
+                ctypes.c_void_p,
+                ctypes.POINTER(PROPERTYKEY),
+                ctypes.POINTER(PROPVARIANT)
+            )(property_vtable[6])
+            commit = ctypes.WINFUNCTYPE(
+                ctypes.c_long,
+                ctypes.c_void_p
+            )(property_vtable[7])
+
+            app_id_fmtid = (ctypes.c_byte * 16)(
+                0xD5, 0xA8, 0x29, 0x9F, 0x0C, 0x4B, 0x00, 0x00,
+                0x86, 0xAB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+            )
+            key = PROPERTYKEY(app_id_fmtid, 5)
+            value = PROPVARIANT()
+            value.vt = 31
+            value.pwszVal = TERMCHAT_APP_ID
+            set_value(property_store, ctypes.byref(key), ctypes.byref(value))
+            commit(property_store)
+
+        persist_file = ctypes.c_void_p()
+        iid_persist_file = (ctypes.c_byte * 16)(
+            0x0B, 0x01, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46
+        )
+        if query_interface(
+            shell_link,
+            ctypes.byref(iid_persist_file),
+            ctypes.byref(persist_file)
+        ) == 0:
+            persist_vtable = ctypes.cast(
+                persist_file,
+                ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
+            ).contents
+            save = ctypes.WINFUNCTYPE(
+                ctypes.c_long,
+                ctypes.c_void_p,
+                wintypes.LPCWSTR,
+                wintypes.BOOL
+            )(persist_vtable[6])
+            save(persist_file, shortcut_path, True)
+
+    except Exception:
+        pass
 
 
 def configure_windows_app_identity():
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                TERMCHAT_APP_ID
-            )
-        except Exception:
-            pass
+    if sys.platform != "win32":
+        return
+
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            TERMCHAT_APP_ID
+        )
+        register_windows_start_menu_shortcut()
+    except Exception:
+        pass
 
 
 def is_in_terminal():
